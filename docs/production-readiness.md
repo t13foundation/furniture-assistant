@@ -6,7 +6,7 @@ Review of the Furniture Assistant web app against real-deployment requirements, 
 
 | Priority | Findings | Done | Partly done | Open |
 |---|---|---|---|---|
-| P0 — blocks real deployment | 6 | 1 | 2 | 3 |
+| P0 — blocks real deployment | 6 | 2 | 1 | 3 |
 | P1 — needed before customer-facing use | 10 | 1 | 0 | 9 |
 | P2 — quality and robustness | 7 | 0 | 0 | 7 |
 
@@ -14,19 +14,20 @@ Top 5 open items, in order of risk:
 
 1. **Single-process state (P0).** Locks and job tracking live in process memory; a second uvicorn worker or replica corrupts projects and loses jobs. Exactly one worker must run until state moves to a queue/DB.
 2. **Jobs do not survive a restart (P0).** An interrupted analysis is reported as an error and the user must click "Run analysis" again.
-3. **No model-server readiness check on `analyze` (P0, remainder).** The health endpoint exists, but a job is still accepted when the model server is down and fails on its first page instead of getting a 503.
-4. **`OPENAI_API_KEY` read from `.env` in the repo directory (P0).** No secret manager; anyone with repo-dir access can read the key.
-5. **No authorization model (P1).** Every logged-in user sees every project; there are no roles.
+3. **`OPENAI_API_KEY` read from `.env` in the repo directory (P0).** No secret manager; anyone with repo-dir access can read the key.
+4. **No authorization model (P1).** Every logged-in user sees every project; there are no roles.
+5. **Audit log is not tamper-evident (P1).** Per-project audit files and module versions can be edited without detection.
 
 Done in this release (the review's "do now" list, each covered by tests in `tests/test_webapp_improvements.py`):
 
 - Session cookie `secure` flag via `FA_COOKIE_SECURE` (default `false`).
 - Upload limits: `FA_MAX_UPLOAD_MB` per file and `FA_MAX_FILES` per project, both returning HTTP 413.
 - Public `GET /api/health` endpoint (exempt from auth), reporting model URL, projects-root writability and auth state.
+- Model-server readiness: `analyze` and module `refine` probe `GET {FA_API_BASE}/models` before starting work; failures return HTTP 503 without queuing or changing project/module state.
 - React `ErrorBoundary` around the router, so a render error shows a "Reload" page instead of a blank screen.
 - `WEB_PORT` Makefile variable (`make web WEB_PORT=8010`).
 
-Explicitly **not** implemented from the same list: the `analyze` 503 probe of the model server, the per-request total upload cap, and auto-detection of the cookie `secure` flag from a public URL (it is env-only; see the P0 table).
+Explicitly **not** implemented from the same list: the per-request total upload cap and auto-detection of the cookie `secure` flag from a public URL (it is env-only; see the P0 table).
 
 ## P0 — blocks real deployment
 
@@ -36,7 +37,7 @@ Explicitly **not** implemented from the same list: the `analyze` 503 probe of th
 | Session security | The `fa_session` cookie was set without `secure`, so the session could be replayed over plain HTTP once the app is exposed. | `src/webapp/api.py:181-191` (`set_cookie(..., httponly=True, samesite="lax", secure=secure)`), `src/webapp/auth.py:18` (`COOKIE_NAME = "fa_session"`) | Done: `secure` comes from `FA_COOKIE_SECURE` (default `false`). Note: the auto-detection from a public URL proposed in the review was **not** implemented — set the flag explicitly once TLS terminates in front of the app. | S | Done |
 | Upload limits | `create_project` previously accepted any number of any-size files (suffix check only); a 2 GB PDF or 500 files were rendered page-by-page into `pages/`. | `src/webapp/api.py:256-261` (suffix check, then `await f.read()` for every file, then `_check_upload_limits`), `src/webapp/api.py:274-282` (`FA_MAX_FILES` 50, `FA_MAX_UPLOAD_MB` 50 → 413) | Done: per-file and per-count limits with 413. Remaining: the size is checked **after** `await file.read()`, so an oversized request is still fully buffered in memory before rejection, and the planned per-request total cap (~200 MB) was not implemented — check `UploadFile.size` / stream, add a request-total limit. | M | Partly done |
 | Secrets | `OPENAI_API_KEY` is loaded from a `.env` file inside the repo directory at startup; there is no secret manager, so anyone with repo-dir access reads the key. | `src/webapp/api.py:123` (`load_dotenv(REPO_ROOT / ".env")`) | Document env-only in production, never `.env` (see [Operations](operations.md)); move to a real secret manager before multi-host deployment. | S | Open |
-| Health / readiness | No health endpoint existed (now added), and there is still no readiness check of the model server before accepting `analyze`: the job is queued and only fails on its first page when the server is down or the model is not loaded. | `src/webapp/api.py:153-167` (health, public via `src/webapp/auth.py:140`), `src/webapp/api.py:285-299` (analyze queues without probing), `src/webapp/analysis.py:244-247` (first-page abort when the model never answers) | Done: `GET /api/health` → status/model URL/projects-root writability/auth. Remaining: `analyze` returns 503 with the model error when a short `GET {base_url}/models` fails. | S | Partly done |
+| Health / readiness | The public health endpoint reports application/storage state and model URL, but analysis and refine previously accepted work while the model server was down or had no loaded model. | `src/webapp/api.py` (health endpoint and `_probe_model_server`; `analyze` and `refine` probe before writing job/module state) | Done: `analyze` and `refine` issue `GET {FA_API_BASE}/models` with a 5-second timeout and return `503` naming the URL and error on a connection failure, timeout or non-2xx response. Failed probes do not create or change a job or module. | S | Done |
 | Job durability | Jobs do not survive a restart: a `queued`/`running` job without a live task is rewritten to `error` ("Analysis interrupted (server restarted)"); the user must run the analysis again. Same for an interrupted module re-run. | `src/webapp/api.py:222-231` (`_job`), `src/webapp/api.py:386-393` (lost refine) | Persist job intent and resume on startup. | M | Open |
 
 ## P1 — needed before customer-facing use

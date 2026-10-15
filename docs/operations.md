@@ -62,7 +62,7 @@ Terminate TLS in front of the app (the server itself binds `127.0.0.1`). Once HT
 {"status": "ok", "model_base_url": "http://127.0.0.1:1234/v1", "projects_root_writable": true, "auth_enabled": false}
 ```
 
-`status` is `degraded` when the projects root cannot be written. Use it for load-balancer / systemd / container probes. Full endpoint reference: [API](api.md).
+`status` is `degraded` when the projects root cannot be written. This endpoint reports the configured model URL but does not actively contact the model server. Before accepting `analyze` or `refine`, the API separately calls `GET {FA_API_BASE}/models` with a 5-second timeout; connection failures, timeouts and non-2xx responses return `503` without queuing work or changing the module. Use `/api/health` for application/storage health and the analysis/refine response to verify model availability. Full endpoint reference: [API](api.md).
 
 ## Upload limits
 

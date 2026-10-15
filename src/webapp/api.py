@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Literal
 
+import httpx
 from config.settings import AppConfig
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -282,7 +283,26 @@ def _check_upload_limits(uploads: list[tuple[str, bytes]]) -> None:
             raise HTTPException(413, f"File {file_name} exceeds {max_mb} MB")
 
 
-@app.post("/api/projects/{project_id}/analyze", status_code=202)
+async def _probe_model_server(request: Request) -> None:
+    config = request.app.state.config
+    base_url = config.api.base_url.rstrip("/")
+    api_key = config.api.api_key
+    if "api.openai.com" in base_url and (not api_key or api_key == "lm-studio"):
+        api_key = os.environ.get("OPENAI_API_KEY")
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{base_url}/models", headers=headers)
+            response.raise_for_status()
+    except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+        raise HTTPException(503, f"Model server at {base_url} is unavailable: {exc}") from None
+
+
+@app.post(
+    "/api/projects/{project_id}/analyze",
+    status_code=202,
+    responses={503: {"description": "Model server unavailable"}},
+)
 async def analyze(request: Request, project_id: str) -> StatusResponse:
     store = _store(request)
     _require_project(store, project_id)
@@ -290,6 +310,7 @@ async def analyze(request: Request, project_id: str) -> StatusResponse:
         raise HTTPException(409, "Analysis already running")
     if _refine_running(request, project_id):
         raise HTTPException(409, "A model re-run is in progress; wait for it before re-analysing")
+    await _probe_model_server(request)
     with store.lock(project_id):
         store.save_job(project_id, Job(status="queued"))
         store.append_audit(project_id, "analyze_start", request.state.username)
@@ -526,17 +547,27 @@ def answer_questions(request: Request, project_id: str, module_id: str, body: An
         return _save_and_recheck(request, project_id, model, action, _changes(current.overrides, overrides))
 
 
-@app.post("/api/projects/{project_id}/modules/{module_id}/refine", status_code=202)
+@app.post(
+    "/api/projects/{project_id}/modules/{module_id}/refine",
+    status_code=202,
+    responses={503: {"description": "Model server unavailable"}},
+)
 async def refine(request: Request, project_id: str, module_id: str) -> StatusResponse:
     """Ask the model once more about the module's open questions (background; poll the module)."""
-    current = get_module(request, project_id, module_id)
+    store = _store(request)
+    _require_project(store, project_id)
+    try:
+        current = store.load_module(project_id, module_id)
+    except KeyError:
+        raise HTTPException(404, f"Unknown module {module_id}") from None
     if _refine_running(request, project_id, module_id):
         raise HTTPException(409, "Model re-run already running")
     if _running(request, project_id):
         raise HTTPException(409, "Analysis is running for this project")
     if current.draft is None:
         raise HTTPException(422, "Module was created by hand; there is no model interpretation to refine")
-    store = _store(request)
+    await _probe_model_server(request)
+    get_module(request, project_id, module_id)
     with store.lock(project_id):
         latest = store.load_module(project_id, module_id)
         store.save_module(

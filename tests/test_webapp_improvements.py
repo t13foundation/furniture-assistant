@@ -86,6 +86,71 @@ def test_upload_limits_return_413(client, monkeypatch):
     assert client.get("/api/projects").json() == []
 
 
+def test_analyze_rejects_unreachable_model_without_creating_job(client):
+    project_id = _create(client)
+    api.app.state.config.api.base_url = "http://127.0.0.1:1/v1"
+
+    response = client.post(f"/api/projects/{project_id}/analyze")
+
+    assert response.status_code == 503
+    assert "http://127.0.0.1:1/v1" in response.json()["detail"]
+    assert (api.app.state.store.project_dir(project_id) / "job.json").exists() is False
+
+
+def test_analyze_queues_when_model_probe_succeeds(client, monkeypatch):
+    import httpx
+
+    project_id = _create(client)
+    api.app.state.config.api.base_url = "http://model.example/v1"
+    requests = []
+    client_class = httpx.AsyncClient
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json={"object": "list", "data": []})
+
+    monkeypatch.setattr(
+        api.httpx,
+        "AsyncClient",
+        lambda **kwargs: client_class(transport=httpx.MockTransport(handler), **kwargs),
+    )
+    response = client.post(f"/api/projects/{project_id}/analyze")
+
+    assert response.status_code == 202
+    assert response.json() == {"status": "queued"}
+    assert requests[0].url == "http://model.example/v1/models"
+    assert requests[0].headers["authorization"] == "Bearer lm-studio"
+    assert (api.app.state.store.project_dir(project_id) / "job.json").exists()
+
+
+def test_refine_rejects_unreachable_model_without_changing_module_or_audit(client, two_door_module):
+    from src.furniture.schema import ModuleDraft
+
+    project_id = _create(client)
+    module_url = f"/api/projects/{project_id}/modules/TEST"
+    assert client.put(module_url, json=two_door_module.model_dump(mode="json")).status_code == 200
+    store = api.app.state.store
+    model = store.load_module(project_id, "TEST")
+    model.draft = ModuleDraft(
+        module_id="TEST",
+        title=two_door_module.title,
+        view_bbox=two_door_module.view_bbox,
+    )
+    store.save_module(project_id, model)
+    module_path = store.project_dir(project_id) / "modules" / "TEST.json"
+    audit_path = store.project_dir(project_id) / "audit.jsonl"
+    before_module = module_path.read_bytes()
+    before_audit = audit_path.read_bytes()
+    api.app.state.config.api.base_url = "http://127.0.0.1:1/v1"
+
+    response = client.post(f"{module_url}/refine")
+
+    assert response.status_code == 503
+    assert "http://127.0.0.1:1/v1" in response.json()["detail"]
+    assert module_path.read_bytes() == before_module
+    assert audit_path.read_bytes() == before_audit
+
+
 def test_audit_history_restore_and_review(client, two_door_module):
     project_id = _create(client)
     url = f"/api/projects/{project_id}/modules/TEST"

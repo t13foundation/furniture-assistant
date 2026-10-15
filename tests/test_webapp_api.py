@@ -15,6 +15,11 @@ from src.webapp import analysis, api
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("FA_OUTPUT_DIR", str(tmp_path))
+
+    async def model_available(_request):
+        return None
+
+    monkeypatch.setattr(api, "_probe_model_server", model_available)
     with TestClient(api.app) as test_client:
         yield test_client
 
