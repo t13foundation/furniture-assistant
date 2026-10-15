@@ -489,6 +489,11 @@ export interface components {
             chain_valid: boolean;
             /** Chain Error */
             chain_error: string | null;
+            /**
+             * Chain Status
+             * @enum {string}
+             */
+            chain_status: "unverified" | "verified" | "invalid";
         };
         /** AnswersBody */
         AnswersBody: {
@@ -1396,6 +1401,10 @@ export interface components {
             created_at: string;
             /** Files */
             files: components["schemas"]["ProjectFile"][];
+            /** Audit Chain Since */
+            audit_chain_since: number | null;
+            /** Audit Legacy Hash */
+            audit_legacy_hash: string | null;
         };
         /** ProjectDetailResponse */
         ProjectDetailResponse: {
@@ -1422,6 +1431,10 @@ export interface components {
             created_at: string;
             /** Files */
             files: components["schemas"]["ProjectFile"][];
+            /** Audit Chain Since */
+            audit_chain_since: number | null;
+            /** Audit Legacy Hash */
+            audit_legacy_hash: string | null;
             /** Job Status */
             job_status: string | null;
             /** Module Count */

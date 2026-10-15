@@ -12,6 +12,7 @@ Layout under ``<output.dir>/webapp/projects/<project_id>/``::
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import secrets
@@ -23,12 +24,12 @@ from pathlib import Path
 from typing import Literal
 
 from config.settings import DocumentConfig
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from src.furniture.schema import ModuleModel
 from src.pipeline.agent import make_loader
 from src.schema.enums import DrawingType, classify_drawing
-from src.webapp.audit import entry_hash, next_previous_hash
+from src.webapp.audit import entry_hash, last_audit_record, verify_audit
 
 
 class ProjectFile(BaseModel):
@@ -42,6 +43,8 @@ class Project(BaseModel):
     name: str
     created_at: str
     files: list[ProjectFile] = Field(default_factory=list)
+    audit_chain_since: int | None = None
+    audit_legacy_hash: str | None = None
 
 
 class JobItem(BaseModel):
@@ -235,26 +238,79 @@ class ProjectStore:
         self, project_id: str, action: str, user: str | None, module_id: str | None = None, detail: str | None = None
     ) -> None:
         with self.lock(project_id):
-            path = self.project_dir(project_id) / "audit.jsonl"
+            directory = self.project_dir(project_id)
+            path = directory / "audit.jsonl"
+            project = self.load_project(project_id)
+            initialized = project.audit_chain_since is None
+            if initialized:
+                raw = path.read_bytes() if path.exists() else b""
+                lines = raw.splitlines(keepends=True)
+                first_hashed = None
+                for index, line in enumerate(lines, 1):
+                    try:
+                        existing = json.loads(line)
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        raise ValueError(f"audit log line {index} is not valid JSON") from None
+                    if not isinstance(existing, dict):
+                        raise ValueError(f"audit log line {index} is not a JSON object")
+                    if "hash" in existing or "prev_hash" in existing:
+                        first_hashed = index
+                        break
+                project.audit_chain_since = first_hashed or len(lines) + 1
+                prefix = b"".join(lines[: project.audit_chain_since - 1])
+                project.audit_legacy_hash = hashlib.sha256(prefix).hexdigest() if prefix else "0" * 64
+                if first_hashed is not None:
+                    valid, error = verify_audit(raw, project.audit_chain_since, project.audit_legacy_hash)
+                    if not valid:
+                        raise ValueError(f"cannot extend invalid audit chain: {error}")
+                _write_atomic(directory / "project.json", project.model_dump_json(indent=2))
+            last = last_audit_record(path)
+            if last is None:
+                previous = project.audit_legacy_hash or "0" * 64
+                if project.audit_chain_since == 1:
+                    previous = "0" * 64
+            elif "hash" in last:
+                previous = last["hash"]
+                payload = {key: value for key, value in last.items() if key != "hash"}
+                if (
+                    not isinstance(previous, str)
+                    or not isinstance(last.get("prev_hash"), str)
+                    or entry_hash(payload) != previous
+                ):
+                    raise ValueError("audit log final record hash is invalid")
+            elif initialized:
+                previous = project.audit_legacy_hash or "0" * 64
+            else:
+                raise ValueError("audit log final record is unhashed after chain start")
             entry = {
                 "at": now_iso(),
                 "user": user or "system",
                 "action": action,
                 "module_id": module_id,
                 "detail": detail,
+                "prev_hash": previous,
             }
-            entry["prev_hash"] = next_previous_hash(path)
             entry["hash"] = entry_hash(entry)
             with path.open("a", encoding="utf-8") as stream:
                 stream.write(json.dumps(entry, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
 
-    def list_activity(self, project_id: str) -> list[ActivityEntry]:
-        """Newest first."""
-        path = self.project_dir(project_id) / "audit.jsonl"
-        if not path.exists():
-            return []
-        lines = reversed(path.read_text(encoding="utf-8").splitlines())
-        return [ActivityEntry.model_validate_json(line) for line in lines if line]
+    @staticmethod
+    def list_activity_snapshot(snapshot: bytes) -> list[ActivityEntry]:
+        """Newest first; malformed records are omitted so the integrity result remains visible."""
+        entries: list[ActivityEntry] = []
+        for line in snapshot.splitlines():
+            if not line:
+                continue
+            try:
+                entries.append(ActivityEntry.model_validate_json(line))
+            except (UnicodeDecodeError, ValueError, ValidationError):
+                continue
+        return list(reversed(entries))
+
+    def audit_snapshot(self, project_id: str) -> tuple[bytes, Project]:
+        directory = self.project_dir(project_id)
+        path = directory / "audit.jsonl"
+        return (path.read_bytes() if path.exists() else b"", self.load_project(project_id))
 
     def pricing_path(self, project_id: str) -> Path:
         return self.project_dir(project_id) / "pricing.yaml"

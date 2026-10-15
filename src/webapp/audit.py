@@ -19,67 +19,108 @@ def entry_hash(entry: dict[str, Any]) -> str:
     return hashlib.sha256(canonical_json(entry)).hexdigest()
 
 
-def next_previous_hash(path: Path) -> str:
-    """Return the previous chain hash, anchoring a legacy prefix by its raw bytes."""
-    if not path.exists():
-        return GENESIS_HASH
-    raw = path.read_bytes()
-    lines = raw.splitlines(keepends=True)
-    previous = GENESIS_HASH
-    legacy = bytearray()
-    hashed_seen = False
-    for line_number, raw_line in enumerate(lines, 1):
-        try:
-            entry = json.loads(raw_line)
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            # Leave malformed log detection to verify; append does not conceal it.
-            raise ValueError(f"audit log line {line_number} is not valid JSON") from None
-        if not isinstance(entry, dict) or "hash" not in entry:
-            if hashed_seen:
-                raise ValueError(f"audit log line {line_number} has no hash after the chain started")
-            legacy.extend(raw_line)
-            continue
-        hashed_seen = True
-        previous = entry["hash"]
-    if not hashed_seen and legacy:
-        return hashlib.sha256(legacy).hexdigest()
-    return previous
+def _read_bytes(source: Path | bytes) -> bytes:
+    if isinstance(source, bytes):
+        return source
+    return source.read_bytes() if source.exists() else b""
 
 
-def verify_audit(path: Path) -> tuple[bool, str | None]:
-    """Verify a log, accepting only a leading unhashed legacy prefix."""
-    if not path.exists():
-        return True, None
+def verify_audit(
+    source: Path | bytes,
+    chain_since: int | None = None,
+    legacy_hash: str | None = None,
+) -> tuple[bool, str | None]:
+    """Verify a snapshot, allowing only the legacy prefix recorded in project metadata."""
+    if isinstance(source, Path) and chain_since is None:
+        metadata_path = source.parent / "project.json"
+        if metadata_path.exists():
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                chain_since = metadata.get("audit_chain_since")
+                legacy_hash = metadata.get("audit_legacy_hash")
+            except (OSError, json.JSONDecodeError):
+                return False, "project metadata is invalid"
     try:
-        raw = path.read_bytes()
+        raw = _read_bytes(source)
     except OSError as exc:
         return False, str(exc)
     lines = raw.splitlines(keepends=True)
-    previous = GENESIS_HASH
-    legacy = bytearray()
-    chain_started = False
+    if chain_since is None:
+        for line_number, raw_line in enumerate(lines, 1):
+            try:
+                entry = json.loads(raw_line)
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                return False, f"line {line_number}: invalid JSON"
+            if not isinstance(entry, dict):
+                return False, f"line {line_number}: expected a JSON object"
+            if "hash" in entry or "prev_hash" in entry:
+                return False, "chain checkpoint is missing"
+        return True, None
+    if chain_since < 1:
+        return False, "chain checkpoint is invalid"
+    prefix = b"".join(lines[: chain_since - 1])
+    expected_legacy_hash = hashlib.sha256(prefix).hexdigest() if prefix else GENESIS_HASH
+    if legacy_hash != expected_legacy_hash:
+        return False, "legacy prefix hash mismatch"
+    previous = expected_legacy_hash
     for line_number, raw_line in enumerate(lines, 1):
         try:
             entry = json.loads(raw_line)
         except (UnicodeDecodeError, json.JSONDecodeError):
             return False, f"line {line_number}: invalid JSON"
+        if line_number < chain_since:
+            if not isinstance(entry, dict) or "hash" in entry or "prev_hash" in entry:
+                return False, f"line {line_number}: invalid legacy prefix"
+            continue
         if not isinstance(entry, dict):
             return False, f"line {line_number}: expected a JSON object"
         if "hash" not in entry or "prev_hash" not in entry:
-            if chain_started:
-                return False, f"line {line_number}: unhashed entry after chain start"
-            legacy.extend(raw_line)
-            continue
-        expected_previous = hashlib.sha256(legacy).hexdigest() if not chain_started and legacy else previous
-        chain_started = True
-        if entry.get("prev_hash") != expected_previous:
+            return False, f"line {line_number}: unhashed entry after chain start"
+        if entry.get("prev_hash") != previous:
             return False, f"line {line_number}: prev_hash mismatch"
         claimed = entry.get("hash")
         payload = {key: value for key, value in entry.items() if key != "hash"}
         if not isinstance(claimed, str) or entry_hash(payload) != claimed:
             return False, f"line {line_number}: hash mismatch"
         previous = claimed
+    if len(lines) < chain_since:
+        return False, "chain record is missing"
     return True, None
+
+
+def last_audit_record(path: Path) -> dict[str, Any] | None:
+    """Read only the final complete record; reject partial or malformed tails."""
+    if not path.exists() or path.stat().st_size == 0:
+        return None
+    with path.open("rb") as stream:
+        stream.seek(0, 2)
+        end = stream.tell()
+        if end == 0:
+            return None
+        if end == 1:
+            raise ValueError("audit log has an incomplete final line")
+        stream.seek(end - 1)
+        if stream.read(1) != b"\n":
+            raise ValueError("audit log has an incomplete final line")
+        position = end - 1
+        chunks = bytearray()
+        while position:
+            start = max(0, position - 4096)
+            stream.seek(start)
+            chunk = stream.read(position - start)
+            newline = chunk.rfind(b"\n")
+            if newline >= 0:
+                chunks[:0] = chunk[newline + 1 :]
+                break
+            chunks[:0] = chunk
+            position = start
+        try:
+            entry = json.loads(bytes(chunks))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise ValueError("audit log final line is not valid JSON") from None
+        if not isinstance(entry, dict):
+            raise ValueError("audit log final line is not a JSON object")
+        return entry
 
 
 def main() -> int:

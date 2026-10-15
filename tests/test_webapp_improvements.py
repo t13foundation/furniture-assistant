@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -105,6 +106,7 @@ def test_audit_history_restore_and_review(client, two_door_module):
     activity = activity_response["entries"]
     assert activity_response["chain_valid"] is True
     assert activity_response["chain_error"] is None
+    assert activity_response["chain_status"] == "verified"
     assert activity[0]["action"] == "restore"
     assert {entry["action"] for entry in activity} >= {"create_project", "editor_save", "restore"}
     exported = client.get(f"/api/projects/{project_id}/audit.jsonl")
@@ -302,6 +304,57 @@ def test_audit_chain_detects_tampering_removal_and_reordering(client):
 
     path.write_bytes(b"".join(reversed(lines)))
     assert verify_audit(path) == (False, "line 1: prev_hash mismatch")
+
+
+def test_audit_chain_downgrade_is_rejected_and_activity_reports_invalid(client):
+    from src.webapp.audit import verify_audit
+
+    project_id = _create(client)
+    store = api.app.state.store
+    store.append_audit(project_id, "first", "operator")
+    store.append_audit(project_id, "second", "operator")
+    path = store.project_dir(project_id) / "audit.jsonl"
+    entries = [json.loads(line) for line in path.read_text().splitlines()]
+    downgraded = [{key: value for key, value in entry.items() if key not in {"hash", "prev_hash"}} for entry in entries]
+    path.write_text("".join(json.dumps(entry) + "\n" for entry in downgraded))
+
+    assert verify_audit(path) == (False, "line 1: unhashed entry after chain start")
+    response = client.get(f"/api/projects/{project_id}/activity")
+    assert response.status_code == 200
+    assert response.json()["chain_status"] == "invalid"
+    assert response.json()["chain_valid"] is False
+
+
+def test_malformed_audit_line_is_reported_without_failing_activity(client):
+    project_id = _create(client)
+    store = api.app.state.store
+    store.append_audit(project_id, "first", "operator")
+    path = store.project_dir(project_id) / "audit.jsonl"
+    path.write_bytes(path.read_bytes() + b"{not-json}\n")
+
+    response = client.get(f"/api/projects/{project_id}/activity")
+    assert response.status_code == 200
+    assert response.json()["chain_valid"] is False
+    assert response.json()["chain_status"] == "invalid"
+    assert response.json()["chain_error"] == "line 3: invalid JSON"
+    assert [entry["action"] for entry in response.json()["entries"]] == ["first", "create_project"]
+
+
+def test_legacy_activity_is_explicitly_unverified(client):
+    project_id = _create(client)
+    directory = api.app.state.store.project_dir(project_id)
+    path = directory / "audit.jsonl"
+    path.write_text('{"at":"2026-01-01T00:00:00","user":"system","action":"legacy","module_id":null,"detail":null}\n')
+    metadata_path = directory / "project.json"
+    metadata = json.loads(metadata_path.read_text())
+    metadata.pop("audit_chain_since")
+    metadata.pop("audit_legacy_hash")
+    metadata_path.write_text(json.dumps(metadata))
+
+    response = client.get(f"/api/projects/{project_id}/activity")
+    assert response.status_code == 200
+    assert response.json()["chain_valid"] is True
+    assert response.json()["chain_status"] == "unverified"
 
 
 def test_audit_chain_accepts_legacy_prefix_and_cli_verify(tmp_path, monkeypatch, capsys):

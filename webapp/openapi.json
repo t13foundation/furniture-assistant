@@ -1378,13 +1378,23 @@
               }
             ],
             "title": "Chain Error"
+          },
+          "chain_status": {
+            "type": "string",
+            "enum": [
+              "unverified",
+              "verified",
+              "invalid"
+            ],
+            "title": "Chain Status"
           }
         },
         "type": "object",
         "required": [
           "entries",
           "chain_valid",
-          "chain_error"
+          "chain_error",
+          "chain_status"
         ],
         "title": "ActivityResponse"
       },
@@ -4202,6 +4212,28 @@
             },
             "type": "array",
             "title": "Files"
+          },
+          "audit_chain_since": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Chain Since"
+          },
+          "audit_legacy_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Legacy Hash"
           }
         },
         "type": "object",
@@ -4209,7 +4241,9 @@
           "id",
           "name",
           "created_at",
-          "files"
+          "files",
+          "audit_chain_since",
+          "audit_legacy_hash"
         ],
         "title": "Project"
       },
@@ -4287,6 +4321,28 @@
             "type": "array",
             "title": "Files"
           },
+          "audit_chain_since": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Chain Since"
+          },
+          "audit_legacy_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Legacy Hash"
+          },
           "job_status": {
             "anyOf": [
               {
@@ -4309,6 +4365,8 @@
           "name",
           "created_at",
           "files",
+          "audit_chain_since",
+          "audit_legacy_hash",
           "job_status",
           "module_count"
         ],

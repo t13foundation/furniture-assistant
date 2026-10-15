@@ -281,7 +281,7 @@ export function ActivityPage() {
   const { id = '' } = useParams()
   const [detail, setDetail] = useState<ProjectDetail | null>(null)
   const [activity, setActivity] = useState<ActivityEntry[]>([])
-  const [chainValid, setChainValid] = useState<boolean | null>(null)
+  const [chainStatus, setChainStatus] = useState<ActivityResponse['chain_status'] | null>(null)
   const [chainError, setChainError] = useState<string | null>(null)
   const [error, setError] = useState('')
   useEffect(() => {
@@ -294,7 +294,7 @@ export function ActivityPage() {
         if (active) {
           setDetail(project)
           setActivity(response.entries)
-          setChainValid(response.chain_valid)
+          setChainStatus(response.chain_status)
           setChainError(response.chain_error)
         }
       })
@@ -316,8 +316,16 @@ export function ActivityPage() {
           </div>
         </header>
         <section className="report-card audit-integrity">
-          <span className={`status-pill ${chainValid === false ? 'error' : chainValid ? 'done' : ''}`}>
-            {chainValid === null ? 'Checking audit integrity…' : chainValid ? 'Audit chain verified' : 'Audit chain invalid'}
+          <span
+            className={`status-pill ${chainStatus === 'invalid' ? 'error' : chainStatus === 'verified' ? 'done' : ''}`}
+          >
+            {chainStatus === null
+              ? 'Checking audit integrity…'
+              : chainStatus === 'verified'
+                ? 'Audit chain verified'
+                : chainStatus === 'unverified'
+                  ? 'Legacy audit log — unverified'
+                  : 'Audit chain invalid'}
           </span>
           {chainError && <p role="alert">{chainError}</p>}
           <a href={`/api/projects/${encodeURIComponent(id)}/audit.jsonl`}>Download audit log</a>

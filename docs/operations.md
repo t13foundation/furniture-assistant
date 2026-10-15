@@ -90,7 +90,7 @@ All state is plain files under the projects root — `<FA_OUTPUT_DIR>/webapp/pro
 
 ## Audit log integrity
 
-Each new `audit.jsonl` record includes `prev_hash` and `hash`. The hash is SHA-256 of the entry, including `prev_hash`, serialized as canonical UTF-8 JSON (sorted keys, no whitespace). The first chained record uses the SHA-256 of any legacy, unhashed prefix as its `prev_hash`; a log without a legacy prefix starts from 64 zeroes. This anchors existing records without claiming that the legacy prefix itself is verified.
+Each new `audit.jsonl` record includes `prev_hash` and `hash`. The hash is SHA-256 of the entry, including `prev_hash`, serialized as canonical UTF-8 JSON (sorted keys, no whitespace). The first chained record uses the SHA-256 of any legacy, unhashed prefix as its `prev_hash`; a log without a legacy prefix starts from 64 zeroes. The `audit_chain_since` line number and legacy-prefix hash are persisted in `project.json` when chaining begins, so removing hash fields from a chained log is detected. Legacy-only logs remain explicitly **unverified**; they are not represented as integrity-verified.
 
 Verify a project or every project under the projects root:
 
@@ -99,7 +99,9 @@ uv run python -m src.webapp.audit verify results/webapp/projects/<project-id>
 uv run python -m src.webapp.audit verify results/webapp/projects
 ```
 
-The command exits `1` and reports the first broken line in each affected log. The Activity page displays the chain integrity result, and the raw log is downloadable from `/api/projects/{project_id}/audit.jsonl`. Keep exported logs with backups; shipping logs to a central system remains optional.
+The command exits `1` and reports the first broken line in each affected log. The Activity page displays verified, unverified (legacy-only), or invalid status; malformed records are skipped in the activity table while causing an invalid integrity result. The raw log is downloadable from `/api/projects/{project_id}/audit.jsonl`.
+
+Hash chaining detects edits and removals within the recorded chain, but it cannot detect tail truncation (including deletion of the entire log): the remaining prefix still verifies. To detect that, operators **must keep the latest chain head hash or an exported audit checkpoint outside the project directory** and compare it during audit/restore. Keep exported logs and their head checkpoints with backups; a checkpoint stored only alongside the mutable project files is not an independent trust anchor.
 
 ## Logs
 

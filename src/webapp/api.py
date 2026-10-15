@@ -109,6 +109,7 @@ class ActivityResponse(BaseModel):
     entries: list[ActivityEntry]
     chain_valid: bool
     chain_error: str | None
+    chain_status: Literal["unverified", "verified", "invalid"]
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -338,9 +339,15 @@ def project_activity(request: Request, project_id: str) -> ActivityResponse:
     store = _store(request)
     _require_project(store, project_id)
     with store.lock(project_id):
-        audit_path = store.project_dir(project_id) / "audit.jsonl"
-        valid, error = verify_audit(audit_path)
-        return ActivityResponse(entries=store.list_activity(project_id), chain_valid=valid, chain_error=error)
+        snapshot, project = store.audit_snapshot(project_id)
+    valid, error = verify_audit(snapshot, project.audit_chain_since, project.audit_legacy_hash)
+    chain_status = "invalid" if not valid else "verified" if project.audit_chain_since is not None else "unverified"
+    return ActivityResponse(
+        entries=store.list_activity_snapshot(snapshot),
+        chain_valid=valid,
+        chain_error=error,
+        chain_status=chain_status,
+    )
 
 
 @app.get("/api/projects/{project_id}/audit.jsonl")
