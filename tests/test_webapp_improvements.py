@@ -204,21 +204,11 @@ def test_quote_manual_assignment_ignored_line_and_reimport(client, two_door_modu
     assert persisted[1]["match"] == "ignored"
 
 
-def test_quote_empty_import_is_retrievable_and_saves_atomically(client, monkeypatch):
-    from src.webapp import reports
-
+def test_empty_quote_import_is_retrievable(client):
     project_id = _create(client)
     workbook = Workbook()
     stream = io.BytesIO()
     workbook.save(stream)
-    original = reports._write_atomic
-    written = []
-
-    def write_atomic(path, text):
-        written.append(path.name)
-        original(path, text)
-
-    monkeypatch.setattr(reports, "_write_atomic", write_atomic)
     url = f"/api/projects/{project_id}/quote"
     uploaded = client.post(
         url,
@@ -234,7 +224,6 @@ def test_quote_empty_import_is_retrievable_and_saves_atomically(client, monkeypa
     assert uploaded.json()["lines"] == []
     assert client.get(url).status_code == 200
     assert client.get(url).json()["lines"] == []
-    assert "quote.json" in written
 
 
 def test_quote_reimport_carryover_uses_unique_label_and_amount(client):

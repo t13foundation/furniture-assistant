@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, ApiError } from './api'
 import { ProjectSidebar, WorkspaceSidebar } from './ProjectView'
@@ -450,7 +450,9 @@ export function PricingSettings() {
   const [saved, setSaved] = useState(false)
   const [quoteFile, setQuoteFile] = useState<File | null>(null)
   const currentProjectId = useRef(id)
-  currentProjectId.current = id
+  useLayoutEffect(() => {
+    currentProjectId.current = id
+  }, [id])
   const assignmentSaving = useRef(false)
   const [savingAssignment, setSavingAssignment] = useState(false)
   useEffect(() => {
