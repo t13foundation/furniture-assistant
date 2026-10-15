@@ -37,6 +37,7 @@ ocr-glm = [
 dev = [
     "pytest>=9.0.3",
     "pre-commit>=4.0",
+    "ruff>=0.17",
 ]
 docs = [
     "mkdocs-material>=9.5",
