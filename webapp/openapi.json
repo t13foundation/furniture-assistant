@@ -368,6 +368,55 @@
         }
       }
     },
+    "/api/projects/{project_id}/quote/assignments": {
+      "put": {
+        "summary": "Put Quote Assignment",
+        "operationId": "put_quote_assignment_api_projects__project_id__quote_assignments_put",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuoteAssignment"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuoteComparison"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/pricing": {
       "get": {
         "summary": "Get Pricing",
@@ -4383,6 +4432,36 @@
         "title": "Question",
         "description": "Data the drawing did not provide; answered by the user (Override) or a model re-run.\n\n``id`` is the Override target it is answered with: ``width``, ``height``, ``depth``, ``plinth``,\n``col:<index>:width``, ``cell:<cell_id>:height``, ``material:carcass``, ``material:front``."
       },
+      "QuoteAssignment": {
+        "properties": {
+          "line_index": {
+            "type": "integer",
+            "title": "Line Index"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "module_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Module Ids"
+          },
+          "ignored": {
+            "type": "boolean",
+            "title": "Ignored",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "line_index",
+          "label"
+        ],
+        "title": "QuoteAssignment"
+      },
       "QuoteComparison": {
         "properties": {
           "lines": {
@@ -4443,18 +4522,36 @@
           "amount": {
             "type": "number",
             "title": "Amount"
+          },
+          "manual_module_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Manual Module Ids"
+          },
+          "ignored": {
+            "type": "boolean",
+            "title": "Ignored",
+            "default": false
           }
         },
         "type": "object",
         "required": [
           "label",
           "codes",
-          "amount"
+          "amount",
+          "manual_module_ids",
+          "ignored"
         ],
         "title": "QuoteLine"
       },
       "QuoteMatch": {
         "properties": {
+          "line_index": {
+            "type": "integer",
+            "title": "Line Index"
+          },
           "codes": {
             "items": {
               "type": "string"
@@ -4499,6 +4596,16 @@
             "type": "array",
             "title": "Module Ids"
           },
+          "match": {
+            "type": "string",
+            "enum": [
+              "code",
+              "manual",
+              "ignored",
+              "none"
+            ],
+            "title": "Match"
+          },
           "complete": {
             "type": "boolean",
             "title": "Complete"
@@ -4506,12 +4613,14 @@
         },
         "type": "object",
         "required": [
+          "line_index",
           "codes",
           "label",
           "quote_amount",
           "app_amount",
           "ratio",
           "module_ids",
+          "match",
           "complete"
         ],
         "title": "QuoteMatch"

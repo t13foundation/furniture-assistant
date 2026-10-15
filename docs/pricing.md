@@ -48,7 +48,11 @@ Upload the client's quote workbook (`.xlsx`) on the *Pricing settings* page (`PO
 - Rows whose label starts with `RAZEM` (case-insensitive) are skipped as totals — only that prefix is filtered.
 - **Codes** are `2–4 letters + 2–3 digits + optional `.N``: `ZM05`, `ZM 01.1`, `ZK-04`. Matching ignores spacing and punctuation (`ZM 01.1` ≡ `ZM01.1`). A two-letter prefix with the letter `O` typed where a zero belongs is corrected: `ZKO2` → `ZK02`.
 - **Multi-code rows** are supported: `ZM09, ZM10, ZM11, ZM12 – lamelles` prices those cabinets together; the app amount is the sum over the matched modules.
-- Lines match modules by normalized `group_id` or `module_id`. A line that matches nothing still counts toward the quote total ("no matching module").
+- Lines match modules by normalized `group_id` or `module_id`. An unmatched line remains in the quote total until assigned or ignored.
+
+## Manual line assignments
+
+The comparison table lets you assign any quote line to one or more project modules, or mark it **Ignore** (for totals and non-cabinet rows). A manual assignment replaces code matching; clearing the selection restores automatic matching. Ignored lines are excluded from quote totals and suggested markup. Assignments are stored with the parsed lines in `quote.json`, keyed by line position and label, and retained when the same workbook is imported again. Changes are audited.
 
 ## Comparison and suggested markup
 

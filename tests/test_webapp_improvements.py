@@ -151,6 +151,53 @@ def test_project_pricing_markup_and_quote_comparison(client, two_door_module):
     assert reverted.status_code == 200 and reverted.json()["inherited"] is True
 
 
+def test_quote_manual_assignment_ignored_line_and_reimport(client, two_door_module):
+    project_id = _create(client)
+    assert (
+        client.put(f"/api/projects/{project_id}/modules/TEST", json=two_door_module.model_dump(mode="json")).status_code
+        == 200
+    )
+    workbook = Workbook()
+    workbook.active.append(["ELEMENTY DODATKOWE", 50000])
+    workbook.active.append(["POZYCJA DO POMINIĘCIA", 70000])
+    stream = io.BytesIO()
+    workbook.save(stream)
+    upload = {
+        "file": (
+            "quote.xlsx",
+            stream.getvalue(),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    }
+    url = f"/api/projects/{project_id}/quote"
+    compared = client.post(url, files=upload).json()
+    assert compared["comparison"][0]["match"] == "none"
+    modules_url = f"/api/projects/{project_id}"
+    module_id = client.get(modules_url).json()["modules"][0]["module_id"]
+    assignment_url = f"{url}/assignments"
+    mapped = client.put(
+        assignment_url,
+        json={"line_index": 0, "label": compared["lines"][0]["label"], "module_ids": [module_id]},
+    )
+    assert mapped.status_code == 200
+    assert mapped.json()["comparison"][0]["match"] == "manual"
+    assert mapped.json()["comparison"][0]["module_ids"] == [module_id]
+    ignored = client.put(
+        assignment_url,
+        json={"line_index": 1, "label": compared["lines"][1]["label"], "ignored": True},
+    )
+    assert ignored.status_code == 200
+    assert ignored.json()["comparison"][1]["match"] == "ignored"
+    assert ignored.json()["total_quote"] == 50000
+    assert ignored.json()["suggested_markup_percent"] == mapped.json()["suggested_markup_percent"]
+
+    reimported = client.post(url, files=upload)
+    assert reimported.status_code == 200
+    persisted = reimported.json()["comparison"]
+    assert persisted[0]["match"] == "manual" and persisted[0]["module_ids"] == [module_id]
+    assert persisted[1]["match"] == "ignored"
+
+
 def test_users_cli_and_markup_suggestion(tmp_path, monkeypatch, capsys):
     import sys
     from types import SimpleNamespace

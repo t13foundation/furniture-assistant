@@ -109,6 +109,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/quote/assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Quote Assignment */
+        put: operations["put_quote_assignment_api_projects__project_id__quote_assignments_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/pricing": {
         parameters: {
             query?: never;
@@ -1447,6 +1464,20 @@ export interface components {
             /** Candidate Values */
             candidate_values: string[];
         };
+        /** QuoteAssignment */
+        QuoteAssignment: {
+            /** Line Index */
+            line_index: number;
+            /** Label */
+            label: string;
+            /** Module Ids */
+            module_ids?: string[];
+            /**
+             * Ignored
+             * @default false
+             */
+            ignored: boolean;
+        };
         /** QuoteComparison */
         QuoteComparison: {
             /** Lines */
@@ -1470,9 +1501,18 @@ export interface components {
             codes: string[];
             /** Amount */
             amount: number;
+            /** Manual Module Ids */
+            manual_module_ids: string[];
+            /**
+             * Ignored
+             * @default false
+             */
+            ignored: boolean;
         };
         /** QuoteMatch */
         QuoteMatch: {
+            /** Line Index */
+            line_index: number;
             /** Codes */
             codes: string[];
             /** Label */
@@ -1485,6 +1525,11 @@ export interface components {
             ratio: number | null;
             /** Module Ids */
             module_ids: string[];
+            /**
+             * Match
+             * @enum {string}
+             */
+            match: "code" | "manual" | "ignored" | "none";
             /** Complete */
             complete: boolean;
         };
@@ -1891,6 +1936,41 @@ export interface operations {
         requestBody: {
             content: {
                 "multipart/form-data": components["schemas"]["Body_upload_quote_api_projects__project_id__quote_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuoteComparison"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_quote_assignment_api_projects__project_id__quote_assignments_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuoteAssignment"];
             };
         };
         responses: {
