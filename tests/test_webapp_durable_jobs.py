@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import multiprocessing
+import os
 import threading
 import time
 from contextlib import suppress
@@ -13,7 +14,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from src.webapp import api
-from src.webapp.store import Job, JobSupersededError, ProjectStore, now_iso
+from src.webapp.store import Job, JobSupersededError, ProjectLock, ProjectStore, now_iso
 
 
 def _contend(root: str, project_id: str, start, active, maximum) -> None:
@@ -166,8 +167,24 @@ def test_job_claim_fences_old_runner_writes(tmp_path):
 def test_heartbeat_timestamps_are_utc_and_legacy_naive_is_fresh(monkeypatch):
     assert datetime.fromisoformat(now_iso()).utcoffset() == UTC.utcoffset(datetime.now(UTC))
     monkeypatch.setattr(api, "JOB_STALE_AFTER", timedelta(seconds=30))
-    legacy = (datetime.now(UTC) - timedelta(seconds=2)).replace(tzinfo=None).isoformat()
+    legacy = (datetime.now() - timedelta(seconds=2)).isoformat()
     assert api._job_fresh(Job(status="running", owner="remote:1", heartbeat_at=legacy))
+
+
+def test_legacy_naive_heartbeat_uses_local_timezone(monkeypatch):
+    previous_tz = os.environ.get("TZ")
+    monkeypatch.setenv("TZ", "Pacific/Kiritimati")
+    time.tzset()
+    try:
+        monkeypatch.setattr(api, "JOB_STALE_AFTER", timedelta(seconds=30))
+        heartbeat = (datetime.now() - timedelta(hours=2)).isoformat()
+        assert not api._job_fresh(Job(status="running", owner="remote:1", heartbeat_at=heartbeat))
+    finally:
+        if previous_tz is None:
+            monkeypatch.delenv("TZ", raising=False)
+        else:
+            monkeypatch.setenv("TZ", previous_tz)
+        time.tzset()
 
 
 def test_stale_refine_recovery_invalidates_old_runner_claim(tmp_path):
@@ -211,7 +228,7 @@ def test_cancelling_heartbeat_wrapper_cancels_runner(tmp_path, monkeypatch):
                 cancelled.set()
                 raise
 
-        wrapper = asyncio.create_task(api._run_job_with_heartbeat(app, project.id, runner))
+        wrapper = asyncio.create_task(api._run_job_with_heartbeat(app, project.id, "run", runner))
         await started.wait()
         wrapper.cancel()
         with suppress(asyncio.CancelledError):
@@ -255,10 +272,18 @@ def test_analyze_lock_wait_leaves_event_loop_responsive(tmp_path, monkeypatch):
     with TestClient(api.app) as client:
         project_id = client.post("/api/projects", files=[("files", ("drawing.png", b"png", "image/png"))]).json()["id"]
         store = ProjectStore(tmp_path / "output" / "webapp" / "projects")
-        started, health_done = threading.Event(), threading.Event()
+        holder_thread = threading.get_ident()
+        lock_attempted, health_done = threading.Event(), threading.Event()
+        original_enter = ProjectLock.__enter__
+
+        def observed_enter(lock: ProjectLock) -> ProjectLock:
+            if lock.directory.name == project_id and threading.get_ident() != holder_thread:
+                lock_attempted.set()
+            return original_enter(lock)
+
+        monkeypatch.setattr(ProjectLock, "__enter__", observed_enter)
 
         def request_analysis() -> None:
-            started.set()
             assert client.post(f"/api/projects/{project_id}/analyze").status_code == 202
 
         def request_health() -> None:
@@ -268,7 +293,7 @@ def test_analyze_lock_wait_leaves_event_loop_responsive(tmp_path, monkeypatch):
         with store.lock(project_id):
             request_thread = threading.Thread(target=request_analysis)
             request_thread.start()
-            assert started.wait(timeout=2)
+            assert lock_attempted.wait(timeout=2)
             health_thread = threading.Thread(target=request_health)
             health_thread.start()
             responsive = health_done.wait(timeout=2)
@@ -278,3 +303,31 @@ def test_analyze_lock_wait_leaves_event_loop_responsive(tmp_path, monkeypatch):
         assert responsive
         assert not request_thread.is_alive()
         assert not health_thread.is_alive()
+
+
+def test_delayed_heartbeat_wrapper_does_not_adopt_successor_claim(tmp_path):
+    store = ProjectStore(tmp_path)
+    project = store.create_project("test", [("drawing.png", b"png")])
+    app = FastAPI()
+    app.state.store = store
+    store.save_job(
+        project.id,
+        Job(status="running", owner="worker:1", claim_token="old", heartbeat_at=now_iso()),
+    )
+
+    async def verify_claim() -> None:
+        started = False
+
+        async def runner(_claim_token: str) -> None:
+            nonlocal started
+            started = True
+
+        wrapper = asyncio.create_task(api._run_job_with_heartbeat(app, project.id, "old", runner))
+        store.save_job(
+            project.id,
+            Job(status="running", owner="worker:2", claim_token="new", heartbeat_at=now_iso()),
+        )
+        await wrapper
+        assert not started
+
+    asyncio.run(verify_claim())
