@@ -15,7 +15,7 @@ _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _logging_lock = threading.Lock()
 _logging_handler: logging.Handler | None = None
 _tracing_lock = threading.Lock()
-_tracing_initialized = False
+_tracing_backend: str | None = None
 _tracing_client: Any | None = None
 
 
@@ -71,8 +71,8 @@ def configure_logging() -> None:
 
 
 def configure_tracing(config: Any) -> Any | None:
-    """Enable PydanticAI spans and initialize the configured exporter once per process."""
-    global _tracing_initialized, _tracing_client
+    """Enable PydanticAI spans and initialize each configured exporter once per process."""
+    global _tracing_backend, _tracing_client
     from pydantic_ai import Agent
 
     if not config.tracing.enabled or config.tracing.backend == "none":
@@ -80,20 +80,17 @@ def configure_tracing(config: Any) -> Any | None:
         return None
     with _tracing_lock:
         try:
-            from pydantic_ai.models.instrumented import InstrumentationSettings
-
-            if not _tracing_initialized:
+            if _tracing_backend != config.tracing.backend:
+                _tracing_client = None
                 if config.tracing.backend == "langfuse":
                     from langfuse import Langfuse
 
                     _tracing_client = Langfuse(should_export_span=lambda span: True)
-                _tracing_initialized = True
-            Agent.instrument_all(
-                InstrumentationSettings(
-                    include_content=config.tracing.include_content,
-                    include_binary_content=config.tracing.include_binary_content,
-                )
-            )
+                _tracing_backend = config.tracing.backend
+
+            from src.telemetry import tracing_instrumentation_settings
+
+            Agent.instrument_all(tracing_instrumentation_settings(config.tracing))
             logging.getLogger(__name__).info("PydanticAI tracing enabled (backend=%s)", config.tracing.backend)
             return _tracing_client
         except Exception:

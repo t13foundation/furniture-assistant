@@ -177,33 +177,33 @@ class TestPipelineTracingInit:
 
 
 class TestAgentInstrumentation:
-    def test_extraction_agent_instrument_true(self) -> None:
+    def test_extraction_agent_is_not_instrumented_by_default(self) -> None:
         agent = create_extraction_agent(
             model_name="test-model",
             api_base="http://localhost:1234/v1",
         )
-        assert agent.instrument is True
+        assert agent.instrument is False
 
-    def test_exploration_agent_instrument_true(self) -> None:
+    def test_exploration_agent_is_not_instrumented_by_default(self) -> None:
         agent = create_exploration_agent(
             model_name="test-model",
             api_base="http://localhost:1234/v1",
         )
-        assert agent.instrument is True
+        assert agent.instrument is False
 
-    def test_validation_agent_instrument_true(self) -> None:
+    def test_validation_agent_is_not_instrumented_by_default(self) -> None:
         agent = create_validation_agent(
             model_name="test-model",
             api_base="http://localhost:1234/v1",
         )
-        assert agent.instrument is True
+        assert agent.instrument is False
 
-    def test_summarizing_agent_instrument_true(self) -> None:
+    def test_summarizing_agent_is_not_instrumented_by_default(self) -> None:
         agent = create_summarizing_agent(
             model_name="test-model",
             api_base="http://localhost:1234/v1",
         )
-        assert agent.instrument is True
+        assert agent.instrument is False
 
 
 # ---------------------------------------------------------------------------

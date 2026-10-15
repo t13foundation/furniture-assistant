@@ -71,7 +71,7 @@ Source of truth: the mapping tables in `config/settings.py`. Defaults below are 
 | `FA_TRACING_INCLUDE_CONTENT` | `tracing.include_content` | Opt in to exporting prompts, extracted drawing text, tool arguments/results and module drafts. This can expose customer drawing content; keep disabled unless trace storage is approved. | `false` |
 | `FA_TRACING_INCLUDE_BINARY_CONTENT` | `tracing.include_binary_content` | Opt in to including image/binary model content in telemetry events; this can expose drawing data. | `false` |
 
-Content capture is disabled by default in the web app, including image bytes. Enable either setting only when the trace backend and its retention/access controls are approved for drawing data.
+Content capture is disabled by default in both the web app and legacy pipeline, including image bytes. PydanticAI retry feedback is also redacted when content capture is off. Enable either setting only when the trace backend and its retention/access controls are approved for drawing data.
 
 ### `input_dir`
 

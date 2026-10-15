@@ -131,6 +131,8 @@ EXPORTS: dict[str, tuple[str, Callable[[list[ModuleModel], ConstructionRules, Pa
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+    from pydantic_ai import Agent
+
     load_dotenv(REPO_ROOT / ".env")
     configure_logging()
     config = AppConfig.from_yaml(REPO_ROOT / "config" / "default.yaml")
@@ -141,12 +143,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.rules = load_rules(REPO_ROOT / "config" / "furniture.yaml")
     app.state.store = ProjectStore(output_dir / "webapp" / "projects")
     app.state.tasks = {}
+    previous_instrumentation = Agent._instrument_default
     app.state.tracing_client = configure_tracing(config)
-    yield
-    for task in app.state.tasks.values():
-        task.cancel()
-    if app.state.tracing_client is not None:
-        app.state.tracing_client.flush()
+    try:
+        yield
+    finally:
+        try:
+            for task in app.state.tasks.values():
+                task.cancel()
+            if app.state.tracing_client is not None:
+                app.state.tracing_client.flush()
+        finally:
+            Agent.instrument_all(previous_instrumentation)
 
 
 app = FastAPI(title="Furniture Assistant", lifespan=lifespan)
