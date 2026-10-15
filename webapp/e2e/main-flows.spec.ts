@@ -1,8 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { randomBytes, scryptSync } from 'node:crypto'
 import { rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 // One project is created by the upload test and reused by the following tests (serial, one worker).
@@ -133,7 +131,8 @@ test('narrow screens hide the sidebar behind a menu button', async ({ page }) =>
 })
 
 test('viewer can read projects but cannot mutate or access editing controls', async ({ page }) => {
-  const usersFile = join(tmpdir(), 'fa-e2e-users.yaml')
+  const usersFile = process.env.FA_E2E_USERS_FILE
+  if (!usersFile) throw new Error('FA_E2E_USERS_FILE must be set by playwright.config.ts')
   const salt = randomBytes(16)
   const hash = scryptSync('viewer-secret', salt, 64, { N: 2 ** 14, r: 8, p: 1 })
   writeFileSync(
@@ -141,6 +140,7 @@ test('viewer can read projects but cannot mutate or access editing controls', as
     `users:\n  viewer:\n    salt: ${salt.toString('base64')}\n    password_hash: ${hash.toString('base64')}\n    role: viewer\n`,
   )
   try {
+    expect(await (await page.request.get('/api/auth/me')).json()).toMatchObject({ auth_enabled: true })
     await page.goto('/')
     await page.getByLabel('Username').fill('viewer')
     await page.getByLabel('Password').fill('viewer-secret')
@@ -157,8 +157,15 @@ test('viewer can read projects but cannot mutate or access editing controls', as
     await page.getByRole('link', { name: /Szafa testowa/ }).first().click()
     await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0)
     await reviewTab(page).click()
-    await expect(page.getByRole('button', { name: 'Ask the model again' })).toHaveCount(0)
-    await expect(page.locator('.module-workspace section[inert]')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Review', exact: true })).toBeVisible()
+    await expect(page.locator('.module-workspace section[inert]')).toHaveCount(0)
+    await page.goto(`/#/p/${encodeURIComponent(projectId)}/pricing`)
+    await expect(page.getByRole('heading', { name: 'Pricing', exact: true })).toBeVisible()
+    await expect(page.getByText('Markup percent')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Compare with client quote' })).toBeVisible()
+    await expect(page.getByText('Quote workbook (.xlsx)')).toBeVisible()
+    await expect(page.getByLabel('Markup percent')).toBeDisabled()
+    await expect(page.getByLabel('Quote workbook (.xlsx)')).toBeDisabled()
   } finally {
     rmSync(usersFile, { force: true })
   }

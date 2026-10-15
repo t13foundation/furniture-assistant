@@ -603,7 +603,7 @@ export default function ModuleView({ id, model, files, onUpdate, canEdit }: Prop
         </>
       )}
       {tab === 'missing' && (
-        <section className="report-card" inert={!canEdit}>
+        <section className="report-card">
           <header className="report-heading">
             <div>
               <h2>Review</h2>
@@ -630,7 +630,7 @@ export default function ModuleView({ id, model, files, onUpdate, canEdit }: Prop
             <p className="error-message">Refinement failed: {model.refine_error || 'Unknown error'}</p>
           )}
           {answerError && <p className="error-message">{answerError}</p>}
-          {module.questions.some((question) => question.reason === 'unverified') && (
+          {canEdit && module.questions.some((question) => question.reason === 'unverified') && (
             <button
               className="button primary"
               onClick={() => {
@@ -712,8 +712,9 @@ export default function ModuleView({ id, model, files, onUpdate, canEdit }: Prop
                                 <label>
                                   Value (mm)
                                   <input
-                                    type="number"
                                     value={answer.value_mm ?? question.current_mm ?? ''}
+                                    type="number"
+                                    disabled={!canEdit}
                                     onChange={(event) =>
                                       update({
                                         value_mm:
@@ -732,8 +733,9 @@ export default function ModuleView({ id, model, files, onUpdate, canEdit }: Prop
                                     const mark = module.marks.find((item) => item.id === markId)
                                     return (
                                       <button
-                                        key={markId}
                                         className={`chip ${answer.mark_id === markId ? 'selected' : ''}`}
+                                        key={markId}
+                                        disabled={!canEdit}
                                         onClick={() => update({ mark_id: markId, value_mm: null })}
                                       >
                                         {markId} · {mark ? `${mark.value} ${mark.unit}` : 'mark'}
@@ -744,6 +746,7 @@ export default function ModuleView({ id, model, files, onUpdate, canEdit }: Prop
                               )}
                               <button
                                 className={`button secondary ${pickedQuestion === question.id ? 'selected' : ''}`}
+                                disabled={!canEdit}
                                 onClick={() =>
                                   setPickedQuestion(pickedQuestion === question.id ? null : question.id)
                                 }
@@ -764,12 +767,14 @@ export default function ModuleView({ id, model, files, onUpdate, canEdit }: Prop
                               }
                               candidateValues={question.candidate_values}
                               onChange={update}
+                              disabled={!canEdit}
                             />
                           ) : question.kind === 'front' ? (
                             <label className="review-control">
                               Front
                               <select
                                 value={answer.front ?? question.current_value ?? ''}
+                                disabled={!canEdit}
                                 onChange={(event) =>
                                   update({ front: event.target.value as Override['front'] })
                                 }
@@ -786,6 +791,7 @@ export default function ModuleView({ id, model, files, onUpdate, canEdit }: Prop
                               Shelves
                               <input
                                 type="number"
+                                disabled={!canEdit}
                                 min="0"
                                 value={answer.shelves ?? Number(question.current_value ?? 0)}
                                 onChange={(event) => update({ shelves: Number(event.target.value) })}
@@ -794,8 +800,8 @@ export default function ModuleView({ id, model, files, onUpdate, canEdit }: Prop
                           )}
                           <button
                             className="button secondary confirm-button"
+                            disabled={!canEdit || !canConfirm}
                             title="The current value is correct"
-                            disabled={!canConfirm}
                             onClick={() =>
                               void submitAnswers([
                                 {
@@ -875,12 +881,14 @@ export default function ModuleView({ id, model, files, onUpdate, canEdit }: Prop
                               '—')}
                         </td>
                         <td>
-                          <button
-                            className="button secondary"
-                            onClick={() => void submitAnswers([{ target: override.target }])}
-                          >
-                            Remove
-                          </button>
+                          {canEdit && (
+                            <button
+                              className="button secondary"
+                              onClick={() => void submitAnswers([{ target: override.target }])}
+                            >
+                              Remove
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -890,13 +898,15 @@ export default function ModuleView({ id, model, files, onUpdate, canEdit }: Prop
             </section>
           )}
           <div className="modal-actions">
-            <button
-              className="button primary"
-              disabled={!Object.keys(answers).length}
-              onClick={() => void submitAnswers(Object.values(answers))}
-            >
-              Apply answers
-            </button>
+            {canEdit && (
+              <button
+                className="button primary"
+                disabled={!Object.keys(answers).length}
+                onClick={() => void submitAnswers(Object.values(answers))}
+              >
+                Apply answers
+              </button>
+            )}
           </div>
         </section>
       )}
@@ -1068,11 +1078,13 @@ function MaterialAnswer({
   value,
   candidateValues,
   onChange,
+  disabled,
 }: {
   module: FurnitureModule
   value: Override
   candidateValues: string[]
   onChange: (patch: Partial<Override>) => void
+  disabled: boolean
 }) {
   const [name, setName] = useState('')
   const [kind, setKind] = useState<MaterialKind>('laminated_board')
@@ -1081,6 +1093,7 @@ function MaterialAnswer({
       <label>
         Existing material
         <select
+          disabled={disabled}
           value={value.material_key ?? ''}
           onChange={(event) => onChange({ material_key: event.target.value || null, material: null })}
         >
@@ -1108,6 +1121,7 @@ function MaterialAnswer({
                 type="button"
                 className={`chip ${value.material_key === key ? 'selected' : ''}`}
                 key={key}
+                disabled={disabled}
                 onClick={() => onChange({ material_key: key, material: null })}
               >
                 {material?.name ?? key}
@@ -1119,11 +1133,11 @@ function MaterialAnswer({
       <div className="answer-row">
         <label>
           Or new material
-          <input value={name} onChange={(event) => setName(event.target.value)} />
+          <input disabled={disabled} value={name} onChange={(event) => setName(event.target.value)} />
         </label>
         <label>
           Kind
-          <select value={kind} onChange={(event) => setKind(event.target.value as MaterialKind)}>
+          <select disabled={disabled} value={kind} onChange={(event) => setKind(event.target.value as MaterialKind)}>
             {materialKinds.map((item) => (
               <option key={item} value={item}>
                 {item.replaceAll('_', ' ')}
@@ -1135,6 +1149,7 @@ function MaterialAnswer({
       {name && (
         <button
           className="button secondary"
+          disabled={disabled}
           onClick={() =>
             onChange({
               material_key: null,

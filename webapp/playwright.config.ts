@@ -1,10 +1,12 @@
 import { defineConfig, devices } from '@playwright/test'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 
-const USERS_FILE = join(tmpdir(), 'fa-e2e-users.yaml')
-
+const USERS_FILE = process.env.FA_E2E_USERS_FILE ?? join(tmpdir(), `fa-e2e-users-${randomUUID()}.yaml`)
+rmSync(USERS_FILE, { force: true })
+process.env.FA_E2E_USERS_FILE = USERS_FILE
 // Browser tests against the real backend + built frontend, with a deterministic fake model (e2e/fake_llm.py).
 // Projects are written to a throw-away directory; run `npm run build` first (`make web-e2e` does both).
 const API_PORT = 8011

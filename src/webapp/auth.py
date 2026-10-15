@@ -172,6 +172,14 @@ def user_role(username: str | None) -> Role | None:
 ROLES = frozenset({"viewer", "editor", "admin"})
 
 
+def _users_mapping(data: dict[str, Any]) -> dict[str, Any]:
+    """Return the mapping load_users reads, preserving flat legacy files."""
+    users = data.get("users", data)
+    if not isinstance(users, dict):
+        raise ValueError("Users file must contain a mapping")
+    return users
+
+
 def _write_users(target: Path, data: dict[str, Any]) -> None:
     """Replace users.yaml atomically so a crash never leaves it half-written."""
     fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp")
@@ -189,7 +197,10 @@ def add_user(username: str, password: str, path: Path | None = None, role: str =
         raise ValueError(f"Invalid role: {role}")
     target = path or users_path()
     data: Any = yaml.safe_load(target.read_text(encoding="utf-8")) if target.exists() else {}
-    users = data.setdefault("users", {})
+    if not isinstance(data, dict):
+        raise ValueError("Users file must contain a mapping")
+    # Keep new files in the current nested format; existing flat files stay flat.
+    users = data.setdefault("users", {}) if not data else _users_mapping(data)
     if username in users:
         raise ValueError(f"User already exists: {username}")
     salt = secrets.token_bytes(16)
@@ -208,7 +219,9 @@ def set_user_role(username: str, role: str, path: Path | None = None) -> None:
         raise ValueError(f"Invalid role: {role}")
     target = path or users_path()
     data: Any = yaml.safe_load(target.read_text(encoding="utf-8")) if target.exists() else {}
-    users = data.setdefault("users", {})
+    if not isinstance(data, dict):
+        raise ValueError("Users file must contain a mapping")
+    users = _users_mapping(data)
     if username not in users:
         raise ValueError(f"Unknown user: {username}")
     users[username]["role"] = role
@@ -218,7 +231,9 @@ def set_user_role(username: str, role: str, path: Path | None = None) -> None:
 def remove_user(username: str, path: Path | None = None) -> None:
     target = path or users_path()
     data: Any = yaml.safe_load(target.read_text(encoding="utf-8")) if target.exists() else {}
-    users = data.setdefault("users", {})
+    if not isinstance(data, dict):
+        raise ValueError("Users file must contain a mapping")
+    users = _users_mapping(data)
     if username not in users:
         raise ValueError(f"Unknown user: {username}")
     del users[username]

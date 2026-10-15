@@ -193,6 +193,26 @@ def test_project_pricing_markup_and_quote_comparison(client, two_door_module):
     assert reverted.status_code == 200 and reverted.json()["inherited"] is True
 
 
+def test_user_mutations_preserve_flat_legacy_users_file(tmp_path, monkeypatch):
+    users_path = tmp_path / "legacy-users.yaml"
+    users_path.write_text(
+        "alice:\n  salt: salt\n  password_hash: hash\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FA_USERS_FILE", str(users_path))
+    auth._USERS_CACHE = None
+
+    auth.set_user_role("alice", "viewer", users_path)
+    assert auth.load_users()["alice"]["role"] == "viewer"
+
+    auth.add_user("bob", "secret", users_path, role="editor")
+    assert set(auth.load_users()) == {"alice", "bob"}
+    auth.remove_user("bob", users_path)
+    assert set(auth.load_users()) == {"alice"}
+    saved = yaml.safe_load(users_path.read_text(encoding="utf-8"))
+    assert "users" not in saved
+
+
 def test_users_cli_and_markup_suggestion(tmp_path, monkeypatch, capsys):
     import sys
     from types import SimpleNamespace

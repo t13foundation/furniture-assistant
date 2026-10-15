@@ -589,11 +589,10 @@ export function PricingSettings() {
           </p>
         )}
         {id && (
-          <section className="report-card" inert={!canSave}>
+          <section className="report-card">
             <label>
               Markup percent
-              <input
-                type="number"
+              <input disabled={!canSave} type="number"
                 min="0"
                 step="0.1"
                 value={pricing.markup_percent}
@@ -602,11 +601,10 @@ export function PricingSettings() {
             </label>
           </section>
         )}
-        <section className="report-card" inert={!canSave}>
+        <section className="report-card">
           <label>
             Currency
-            <input
-              value={pricing.currency}
+            <input disabled={!canSave} value={pricing.currency}
               onChange={(event) => setPricing({ ...pricing, currency: event.target.value })}
             />
           </label>
@@ -615,14 +613,13 @@ export function PricingSettings() {
             <div className="pricing-row" key={index}>
               <label>
                 Match
-                <input
-                  value={row.match}
+                <input disabled={!canSave} value={row.match}
                   onChange={(event) => updateBoard(index, { match: event.target.value })}
                 />
               </label>
               <label>
                 Material kind
-                <select
+                <select disabled={!canSave}
                   value={row.kind ?? ''}
                   onChange={(event) =>
                     updateBoard(index, {
@@ -638,8 +635,7 @@ export function PricingSettings() {
               </label>
               <label>
                 Thickness mm
-                <input
-                  type="number"
+                <input disabled={!canSave} type="number"
                   value={row.thickness_mm ?? ''}
                   onChange={(event) =>
                     updateBoard(index, {
@@ -650,8 +646,7 @@ export function PricingSettings() {
               </label>
               <label>
                 Price / m²
-                <input
-                  type="number"
+                <input disabled={!canSave} type="number"
                   min="0"
                   step="0.01"
                   value={row.price_per_m2}
@@ -660,6 +655,7 @@ export function PricingSettings() {
               </label>
               <button
                 className="button secondary"
+                disabled={!canSave}
                 onClick={() =>
                   setPricing({ ...pricing, boards: pricing.boards.filter((_, i) => i !== index) })
                 }
@@ -668,8 +664,7 @@ export function PricingSettings() {
               </button>
             </div>
           ))}
-          <button
-            className="button secondary"
+          <button className="button secondary" disabled={!canSave}
             onClick={() =>
               setPricing({
                 ...pricing,
@@ -680,12 +675,11 @@ export function PricingSettings() {
             Add board price
           </button>
         </section>
-        <section className="report-card" inert={!canSave}>
+        <section className="report-card">
           <h2>Edge banding</h2>
           <label>
             Price per metre
-            <input
-              type="number"
+            <input disabled={!canSave} type="number"
               min="0"
               step="0.01"
               value={pricing.edge_banding_per_m ?? ''}
@@ -698,13 +692,12 @@ export function PricingSettings() {
             />
           </label>
         </section>
-        <section className="report-card" inert={!canSave}>
+        <section className="report-card">
           <h2>Hardware price per unit</h2>
           {hardwareCategories.map((category) => (
             <label className="inline-field" key={category}>
               {category}
-              <input
-                type="number"
+              <input disabled={!canSave} type="number"
                 min="0"
                 step="0.01"
                 value={pricing.hardware[category] ?? ''}
@@ -722,11 +715,11 @@ export function PricingSettings() {
             </label>
           ))}
         </section>
-        <section className="report-card" inert={!canSave}>
+        <section className="report-card">
           <h2>Labour</h2>
           <label>
             Rate per hour
-            <input
+            <input disabled={!canSave}
               type="number"
               min="0"
               step="0.01"
@@ -753,17 +746,16 @@ export function PricingSettings() {
           </p>
         )}
         {id && (
-          <section className="report-card" inert={viewer}>
+          <section className="report-card">
             <h2>Compare with client quote</h2>
             <label>
               Quote workbook (.xlsx)
-              <input
-                type="file"
+              <input disabled={viewer} type="file"
                 accept=".xlsx"
                 onChange={(event) => setQuoteFile(event.target.files?.[0] ?? null)}
               />
             </label>
-            <button className="button secondary" disabled={!quoteFile} onClick={() => void uploadQuote()}>
+            <button className="button secondary" disabled={!quoteFile || viewer} onClick={() => void uploadQuote()}>
               Compare quote
             </button>
             {quoteError && (
@@ -792,6 +784,7 @@ export function PricingSettings() {
                 />
                 <button
                   className="button secondary"
+                  disabled={!canSave}
                   onClick={() => setPricing({ ...pricing, markup_percent: quote.suggested_markup_percent })}
                 >
                   Apply suggested markup
