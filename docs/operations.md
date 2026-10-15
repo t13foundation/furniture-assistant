@@ -41,18 +41,16 @@ uv run python -m src.webapp.users list
 uv run python -m src.webapp.users remove alice
 ```
 
-Sessions: the `fa_session` cookie (HMAC-signed `username|expiry`), `httponly`, `samesite=lax`, lifetime 7 days. With auth disabled every request is attributed to `system` in the audit log.
+Sessions: the `fa_session` cookie (HMAC-signed `username|expiry`), `httponly`, `samesite=lax`, lifetime 7 days. The `secure` flag defaults on in production (`FA_ENV=production`) or when `FA_PUBLIC_URL` starts with `https://`. `FA_COOKIE_SECURE` explicitly overrides this default. With auth disabled every request is attributed to `system` in the audit log.
 
 ## Session secret
 
 Session cookies are signed with:
 
-1. `FA_SESSION_SECRET` if set — **required in production**: set an explicit value (e.g. `openssl rand -hex 32`) so restarts and redeployments keep sessions valid and the secret never lives in the repo tree.
-2. Otherwise an auto-generated `config/.session_secret` (32 random bytes, mode 0600, gitignored). Acceptable for a single local instance only: it lives inside the working tree and rotating it invalidates all sessions.
+1. `FA_SESSION_SECRET` if set. It is **required in production**; the app fails at startup without it. Supply it through a protected environment source such as a systemd credential or secret manager, not a `.env` file.
+2. Otherwise, in development only, an auto-generated `config/.session_secret` (32 random bytes, mode 0600, gitignored). This fallback lives inside the working tree and rotating it invalidates all sessions.
 
-## Reverse proxy and TLS
-
-Terminate TLS in front of the app (the server itself binds `127.0.0.1`). Once HTTPS is active, set `FA_COOKIE_SECURE=true` so the browser only sends the session cookie over HTTPS; the cookie keeps `httponly` and `samesite=lax` in all cases. The proxy should forward to the single uvicorn process (see above) and can use `GET /api/health` for probes.
+Production does not load `.env` and never creates the fallback file. Secret manager integration remains a deployment follow-up; provide the secret to the process environment until then.
 
 ## Health endpoint
 
@@ -91,6 +89,15 @@ All state is plain files under the projects root — `<FA_OUTPUT_DIR>/webapp/pro
 
 The app logs to stdout/stderr only (standard `logging` + uvicorn access logs); there are no log files and no structured logging yet (see [Production readiness](production-readiness.md)). Under systemd, journald captures everything: `journalctl -u furniture-assistant -f`. Legacy pipeline runs can additionally be traced to Langfuse (`FA_TRACING_ENABLED`, `docker-compose.dev.yml`).
 
+## Production checklist
+
+- Set `FA_ENV=production`; this disables `.env` loading.
+- Supply `FA_SESSION_SECRET` through a protected process environment / credential source. Startup fails if it is missing.
+- Set `FA_USERS_FILE` to a protected users file with at least one account.
+- Set `FA_PUBLIC_URL=https://…` when the public endpoint uses HTTPS. This defaults the cookie to `Secure`; `FA_COOKIE_SECURE` can explicitly override it.
+- Keep the app behind TLS termination, bind uvicorn to loopback, and run one worker / one replica.
+- Keep model/API keys out of the repository and `.env`; inject them through the service environment or credential mechanism.
+
 ## systemd unit example
 
 ```ini
@@ -101,12 +108,13 @@ After=network.target
 [Service]
 WorkingDirectory=/opt/furniture-assistant
 User=furniture
+Environment=FA_ENV=production
 Environment=FA_API_BASE=http://127.0.0.1:1234/v1
 Environment=FA_ORCHESTRATOR_MODEL=qwen/qwen3.6-35b-a3b
 Environment=FA_OUTPUT_DIR=/var/lib/furniture-assistant
 Environment=FA_USERS_FILE=/etc/furniture-assistant/users.yaml
 Environment=FA_SESSION_SECRET=change-me-openssl-rand-hex-32
-Environment=FA_COOKIE_SECURE=true
+Environment=FA_PUBLIC_URL=https://furniture.example.com
 ExecStart=/opt/furniture-assistant/.venv/bin/uvicorn src.webapp.api:app --host 127.0.0.1 --port 8000
 Restart=on-failure
 
@@ -114,4 +122,4 @@ Restart=on-failure
 WantedBy=multi-user.target
 ```
 
-One worker (no `--workers` flag), one replica. `OPENAI_API_KEY` may be supplied via an `EnvironmentFile=` instead of `.env` — in production prefer the environment over a `.env` file inside the repo tree.
+Replace the placeholder session secret with a protected credential source before deployment. One worker (no `--workers` flag), one replica. `OPENAI_API_KEY` must also be injected through the service environment or credential mechanism; production never reads it from `.env`.

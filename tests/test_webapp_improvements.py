@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,6 +15,7 @@ from tests.conftest import sample_file
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("FA_ENV", "development")
     monkeypatch.setenv("FA_OUTPUT_DIR", str(tmp_path / "output"))
     monkeypatch.delenv("FA_USERS_FILE", raising=False)
     with TestClient(api.app) as test_client:
@@ -49,6 +51,58 @@ def test_auth_disabled_and_login_protects_api(tmp_path, monkeypatch):
         assert client.get("/api/projects").status_code == 200
         assert client.post("/api/auth/logout").status_code == 200
         assert client.get("/api/projects").status_code == 401
+
+
+def test_production_requires_session_secret_and_ignores_dotenv(tmp_path, monkeypatch):
+    from src.webapp import auth
+
+    monkeypatch.setenv("FA_ENV", "production")
+    monkeypatch.delenv("FA_SESSION_SECRET", raising=False)
+    monkeypatch.setattr(auth, "ROOT", tmp_path / "repo")
+    dotenv_path = tmp_path / ".env"
+    dotenv_path.write_text("FA_SESSION_SECRET=from-dotenv\n", encoding="utf-8")
+    monkeypatch.setattr(api, "DOTENV_PATH", dotenv_path)
+
+    with pytest.raises(RuntimeError, match="FA_SESSION_SECRET is required when FA_ENV=production"), TestClient(api.app):
+        pass
+
+    assert "FA_SESSION_SECRET" not in os.environ
+    assert not (tmp_path / "repo" / "config" / ".session_secret").exists()
+
+
+@pytest.mark.parametrize(
+    ("environment", "public_url", "explicit", "expected_secure"),
+    [
+        ("production", None, None, True),
+        ("development", "https://example.test", None, True),
+        ("development", "http://example.test", None, False),
+        ("production", "https://example.test", "false", False),
+        ("development", "https://example.test", "true", True),
+    ],
+)
+def test_login_cookie_secure_precedence(tmp_path, monkeypatch, environment, public_url, explicit, expected_secure):
+    from src.webapp.auth import add_user
+
+    users_file = tmp_path / "users.yaml"
+    monkeypatch.setenv("FA_USERS_FILE", str(users_file))
+    monkeypatch.setenv("FA_ENV", environment)
+    monkeypatch.setenv("FA_SESSION_SECRET", "test-secret")
+    monkeypatch.setenv("FA_OUTPUT_DIR", str(tmp_path / "output"))
+    if public_url is None:
+        monkeypatch.delenv("FA_PUBLIC_URL", raising=False)
+    else:
+        monkeypatch.setenv("FA_PUBLIC_URL", public_url)
+    if explicit is None:
+        monkeypatch.delenv("FA_COOKIE_SECURE", raising=False)
+    else:
+        monkeypatch.setenv("FA_COOKIE_SECURE", explicit)
+    add_user("operator", "s3cret", users_file)
+
+    with TestClient(api.app) as client:
+        response = client.post("/api/auth/login", json={"username": "operator", "password": "s3cret"})
+
+    assert response.status_code == 200
+    assert ("secure" in response.headers["set-cookie"].lower()) is expected_secure
 
 
 def test_health_is_public_and_reports_model_url(tmp_path, monkeypatch):

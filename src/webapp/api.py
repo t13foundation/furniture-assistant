@@ -39,8 +39,10 @@ from src.webapp.auth import (
     auth_enabled,
     auth_middleware,
     create_session,
+    is_production,
     login_retry_after,
     record_login_result,
+    require_production_secret,
     verify_password,
 )
 from src.webapp.store import (
@@ -105,6 +107,7 @@ class ReviewEntry(BaseModel):
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+DOTENV_PATH = REPO_ROOT / ".env"
 DIST_DIR = REPO_ROOT / "webapp" / "dist"
 
 EXPORTS: dict[str, tuple[str, Callable[[list[ModuleModel], ConstructionRules, Path], Path]]] = {
@@ -120,7 +123,10 @@ EXPORTS: dict[str, tuple[str, Callable[[list[ModuleModel], ConstructionRules, Pa
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    load_dotenv(REPO_ROOT / ".env")
+    if is_production():
+        require_production_secret()
+    else:
+        load_dotenv(DOTENV_PATH)
     config = AppConfig.from_yaml(REPO_ROOT / "config" / "default.yaml")
     output_dir = Path(config.output.dir)
     if not output_dir.is_absolute():
@@ -178,8 +184,11 @@ def login(request: Request, body: LoginBody):
     if not ok:
         raise HTTPException(401, "Invalid username or password")
     response = JSONResponse({"username": body.username})
-    # FA_COOKIE_SECURE=true once TLS terminates in front of the app: the browser then sends the session only over HTTPS.
-    secure = os.environ.get("FA_COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
+    secure_env = os.environ.get("FA_COOKIE_SECURE")
+    if secure_env is not None:
+        secure = secure_env.lower() in ("1", "true", "yes")
+    else:
+        secure = is_production() or os.environ.get("FA_PUBLIC_URL", "").lower().startswith("https://")
     response.set_cookie(
         COOKIE_NAME,
         create_session(body.username),
