@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link, NavLink, useLocation, useParams } from 'react-router-dom'
 import { api } from './api'
-import ModuleView from './ModuleView'
 import { useAuth } from './auth'
 import type { ModuleModel, ProjectDetail, ProjectSummary } from './types'
+
+const ModuleView = lazy(() => import('./ModuleView'))
 
 export function ProjectList() {
   const [projects, setProjects] = useState<ProjectSummary[]>([])
@@ -126,8 +127,6 @@ export default function ProjectView() {
   }, [id, selectedModuleId])
   const projectLoaded = detail?.project.id === id
   useEffect(() => {
-    setModel(null)
-    setLoadedKey('')
     if (!projectLoaded || !selectedModuleId) return
     let active = true
     const key = `${id}:${selectedModuleId}`
@@ -190,13 +189,21 @@ export default function ProjectView() {
           </button>
         )}
         {selectedModel ? (
-          <ModuleView
-            key={`${id}:${selectedModuleId}`}
-            id={id}
-            model={selectedModel}
-            files={detail?.project.files ?? []}
-            onUpdate={updateModel}
-          />
+          <Suspense
+            fallback={
+              <div className="empty-state">
+                <h2>Loading module…</h2>
+              </div>
+            }
+          >
+            <ModuleView
+              key={`${id}:${selectedModuleId}`}
+              id={id}
+              model={selectedModel}
+              files={detail?.project.files ?? []}
+              onUpdate={updateModel}
+            />
+          </Suspense>
         ) : (
           <div className="empty-state">
             <h2>
