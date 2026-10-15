@@ -174,6 +174,10 @@ class AppConfig:
             {
                 "FA_TRACING_ENABLED": ("enabled", lambda v: v.lower() in ("true", "1", "yes")),
                 "FA_TRACING_BACKEND": ("backend", str),
+                "FA_TRACING_INCLUDE_BINARY_CONTENT": (
+                    "include_binary_content",
+                    lambda v: v.lower() in ("true", "1", "yes"),
+                ),
             },
         )
 

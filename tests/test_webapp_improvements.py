@@ -26,6 +26,45 @@ def _create(client: TestClient) -> str:
     return response.json()["id"]
 
 
+def test_request_ids_and_json_request_log(client, monkeypatch):
+    import json
+    from io import StringIO
+
+    from src.webapp import observability
+
+    monkeypatch.setenv("FA_LOG_FORMAT", "json")
+    observability.configure_logging()
+    stream = StringIO()
+    previous_stream = observability._logging_handler.setStream(stream)
+    try:
+        echoed = client.get("/api/health", headers={"X-Request-ID": "request-123"})
+        assert echoed.headers["X-Request-ID"] == "request-123"
+
+        generated = client.get("/api/health", headers={"X-Request-ID": "invalid id"})
+        request_id = generated.headers["X-Request-ID"]
+        assert request_id and request_id != "invalid id"
+        assert len(request_id) == 32
+
+        created = client.post(
+            "/api/projects",
+            files=[("files", ("cabinet.png", b"png", "image/png"))],
+            headers={"X-Request-ID": "create-project-request"},
+        )
+        assert created.status_code == 201
+        project_id = created.json()["id"]
+        project_response = client.get(f"/api/projects/{project_id}", headers={"X-Request-ID": "project-request"})
+        assert project_response.status_code == 200
+    finally:
+        observability._logging_handler.setStream(previous_stream)
+
+    lines = [json.loads(line) for line in stream.getvalue().splitlines()]
+    assert any(line["request_id"] == "request-123" for line in lines)
+    assert any(line["request_id"] == request_id for line in lines)
+    assert any(line["request_id"] == "create-project-request" and line["project_id"] == project_id for line in lines)
+    assert any(line["request_id"] == "project-request" and line["project_id"] == project_id for line in lines)
+    assert all("ts" in line and "level" in line and "logger" in line and "message" in line for line in lines)
+
+
 def test_auth_disabled_and_login_protects_api(tmp_path, monkeypatch):
     monkeypatch.setenv("FA_OUTPUT_DIR", str(tmp_path / "output"))
     monkeypatch.setenv("FA_USERS_FILE", str(tmp_path / "users.yaml"))

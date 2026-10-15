@@ -7,7 +7,7 @@ Review of the Furniture Assistant web app against real-deployment requirements, 
 | Priority | Findings | Done | Partly done | Open |
 |---|---|---|---|---|
 | P0 — blocks real deployment | 6 | 1 | 2 | 3 |
-| P1 — needed before customer-facing use | 10 | 1 | 0 | 9 |
+| P1 — needed before customer-facing use | 10 | 2 | 0 | 8 |
 | P2 — quality and robustness | 7 | 0 | 0 | 7 |
 
 Top 5 open items, in order of risk:
@@ -18,13 +18,14 @@ Top 5 open items, in order of risk:
 4. **`OPENAI_API_KEY` read from `.env` in the repo directory (P0).** No secret manager; anyone with repo-dir access can read the key.
 5. **No authorization model (P1).** Every logged-in user sees every project; there are no roles.
 
-Done in this release (the review's "do now" list, each covered by tests in `tests/test_webapp_improvements.py`):
+Done in this release (covered by tests in `tests/test_webapp_*.py`):
 
 - Session cookie `secure` flag via `FA_COOKIE_SECURE` (default `false`).
 - Upload limits: `FA_MAX_UPLOAD_MB` per file and `FA_MAX_FILES` per project, both returning HTTP 413.
 - Public `GET /api/health` endpoint (exempt from auth), reporting model URL, projects-root writability and auth state.
 - React `ErrorBoundary` around the router, so a render error shows a "Reload" page instead of a blank screen.
 - `WEB_PORT` Makefile variable (`make web WEB_PORT=8010`).
+- Request IDs, JSON/text application logs, and PydanticAI tracing configured by `FA_TRACING_ENABLED`.
 
 Explicitly **not** implemented from the same list: the `analyze` 503 probe of the model server, the per-request total upload cap, and auto-detection of the cookie `secure` flag from a public URL (it is env-only; see the P0 table).
 
@@ -47,7 +48,7 @@ Explicitly **not** implemented from the same list: the `analyze` 503 probe of th
 | Authorization | Authentication exists, authorization does not: every logged-in user sees every project; no roles (viewer/editor/admin). | `src/webapp/users.py:12-17` (add/remove/list only), `src/webapp/auth.py:174-177` (user entries are salt + password hash, nothing else) | `role` field in the users file; project ACLs later. | M | Open |
 | Auditability | The audit log and module versions are plain per-project files; nothing is tamper-evident or exported. | `src/webapp/store.py:233-247` (`audit.jsonl` append), `src/webapp/store.py:294-295` (version history, `history-archive-*`) | Hash-chain the lines or ship them to a central log. | M | Open |
 | Cost control | No per-project token/cost accounting in the web app; a large multi-view project run takes ~9 min of model calls and the UI shows nothing about usage (the legacy pipeline has token reports; the web app does not reuse them). | `src/webapp/store.py:54-59` (`Job` has no usage fields), `src/webapp/analysis.py:203-262` (`run_analysis` records per-page status only) | Record usage from the agent results into `job.json` and show it per project. | S | Open |
-| Observability | Stdlib logging only: no request ids, no structured logs; tracing (`FA_TRACING_ENABLED`) is wired into the legacy pipeline settings but not into the web app's agents. | `src/webapp/analysis.py:37` (`logging.getLogger`), `src/webapp/api.py:138` (sole middleware is auth), `config/settings.py:175` (env mapping exists, unused by `src/webapp`) | Request-id middleware + JSON logs; wire `FA_TRACING_ENABLED` into the webapp agents. | M | Open |
+| Observability | Stdlib logging previously had no request IDs or structured output; `FA_TRACING_ENABLED` was only consumed by the legacy pipeline. | `src/webapp/observability.py` (request/project context, JSON formatter, tracing setup), `src/webapp/api.py` (request middleware and startup), `src/webapp/analysis.py` (analysis/refine lifecycle events) | Done: validate or generate `X-Request-ID`, include context in logs, support JSON/text and levels, and instrument web-app PydanticAI agents when tracing is enabled. | M | Done |
 | Backups / retention | State is plain files with no backup job and no retention for `history-archive-*` and the `pages/` PNG cache (hundreds of MB per multi-page PDF). | `src/webapp/store.py:7-10` (layout, page-render cache), `src/webapp/store.py:294-295` (archives), store root under `results/` (`src/webapp/api.py:130`) | Documented backup of `results/webapp`; cleanup task for archives and page renders older than N days. | S | Open |
 | Frontend structure | One ~1.3 MB JS chunk, no code splitting; `ModuleView.tsx` is 1142 lines and `Reports.tsx` 833; 3 `set-state-in-effect` lint warnings (re-verified with `npm run lint`). | `webapp/dist/assets/index-BaU_FseK.js` (1,322,409 bytes, single chunk), `webapp/src/ModuleView.tsx`, `webapp/src/Reports.tsx`; warnings at `webapp/src/ProjectView.tsx:129`, `webapp/src/Reports.tsx:61`, `webapp/src/Reports.tsx:481` | Route-level `React.lazy`; split `ModuleView` into Review/Editor/Header components; derive the effect-set state during render. | M | Open |
 | Frontend resilience | A render error used to blank the whole page (no error boundary). | `webapp/src/ErrorBoundary.tsx`, wrapped around the router at `webapp/src/App.tsx:63-116` | Done: boundary shows the error and a "Reload" button. | S | Done |

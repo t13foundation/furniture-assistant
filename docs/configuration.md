@@ -66,10 +66,11 @@ Source of truth: the mapping tables in `config/settings.py`. Defaults below are 
 
 | Env | Field | Meaning | Default |
 |---|---|---|---|
-| `FA_TRACING_ENABLED` | `tracing.enabled` | `true` / `1` / `yes`. Gates Langfuse/Phoenix tracing in the legacy pipeline orchestrator; forced off in e2e runs. | `true` |
-| `FA_TRACING_BACKEND` | `tracing.backend` | `langfuse` / `phoenix` / `none`. | `langfuse` |
+| `FA_TRACING_ENABLED` | `tracing.enabled` | `true` / `1` / `yes`. Enables PydanticAI/OpenTelemetry instrumentation in the web app and legacy pipeline; forced off in e2e runs. | `true` |
+| `FA_TRACING_BACKEND` | `tracing.backend` | `langfuse` / `phoenix` / `none`. Langfuse initializes its client; Phoenix exports through the configured OpenTelemetry environment. | `langfuse` |
+| `FA_TRACING_INCLUDE_BINARY_CONTENT` | `tracing.include_binary_content` | Include image/binary model content in telemetry events; this can expose drawing data. | YAML `true`; environment unset |
 
-Tracing also needs `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST` in the environment. A local Langfuse stack: `docker compose -f docker-compose.dev.yml up -d` (UI on `http://localhost:3000`).
+Tracing requires the selected backend to be configured. Langfuse uses `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` and `LANGFUSE_HOST`; Phoenix uses standard OpenTelemetry exporter settings. A local Langfuse stack: `docker compose -f docker-compose.dev.yml up -d` (UI on `http://localhost:3000`).
 
 ### `input_dir`
 
@@ -88,6 +89,8 @@ Read directly from the environment (not part of `AppConfig`):
 | `FA_COOKIE_SECURE` | `src/webapp/api.py` | Adds the `secure` flag to the session cookie. Set to `true` once TLS terminates in front of the app. | `false` |
 | `FA_MAX_UPLOAD_MB` | `src/webapp/api.py` | Per-file upload limit; larger files get HTTP 413. | `50` |
 | `FA_MAX_FILES` | `src/webapp/api.py` | Maximum files per project; more get HTTP 413. | `50` |
+| `FA_LOG_FORMAT` | `src/webapp/observability.py` | Application log format: `json` or `text`. | `text` |
+| `FA_LOG_LEVEL` | `src/webapp/observability.py` | Application logging threshold (e.g. `INFO`, `DEBUG`, `WARNING`). | `INFO` |
 | `OPENAI_API_KEY` | `src/furniture/interpret.py` | API key used when `FA_API_BASE` points at `api.openai.com` and no real key is configured. Read from env or `.env`. | unset |
 
 ## `config/default.yaml`

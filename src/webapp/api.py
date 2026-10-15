@@ -6,11 +6,15 @@ Run: ``make web`` (uvicorn on 127.0.0.1:8000). Serves ``webapp/dist`` at ``/`` w
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
+import time
+import uuid
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Literal
+from urllib.parse import unquote
 
 from config.settings import AppConfig
 from dotenv import load_dotenv
@@ -42,6 +46,13 @@ from src.webapp.auth import (
     login_retry_after,
     record_login_result,
     verify_password,
+)
+from src.webapp.observability import (
+    configure_logging,
+    configure_tracing,
+    project_id_var,
+    request_id_var,
+    valid_request_id,
 )
 from src.webapp.store import (
     ActivityEntry,
@@ -121,6 +132,7 @@ EXPORTS: dict[str, tuple[str, Callable[[list[ModuleModel], ConstructionRules, Pa
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     load_dotenv(REPO_ROOT / ".env")
+    configure_logging()
     config = AppConfig.from_yaml(REPO_ROOT / "config" / "default.yaml")
     output_dir = Path(config.output.dir)
     if not output_dir.is_absolute():
@@ -129,13 +141,49 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.rules = load_rules(REPO_ROOT / "config" / "furniture.yaml")
     app.state.store = ProjectStore(output_dir / "webapp" / "projects")
     app.state.tasks = {}
+    app.state.tracing_client = configure_tracing(config)
     yield
     for task in app.state.tasks.values():
         task.cancel()
+    if app.state.tracing_client is not None:
+        app.state.tracing_client.flush()
 
 
 app = FastAPI(title="Furniture Assistant", lifespan=lifespan)
 app.middleware("http")(auth_middleware)
+
+
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    incoming = request.headers.get("x-request-id")
+    request_id = incoming if valid_request_id(incoming) else uuid.uuid4().hex
+    request_token = request_id_var.set(request_id)
+    path_parts = request.url.path.split("/")
+    project_id = unquote(path_parts[3]) if len(path_parts) > 3 and path_parts[:3] == ["", "api", "projects"] else None
+    project_token = project_id_var.set(project_id)
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        resolved_project_id = project_id or getattr(request.state, "project_id", None)
+        response_project_token = project_id_var.set(resolved_project_id) if resolved_project_id is not None else None
+        try:
+            logging.getLogger("src.webapp.request").info(
+                "HTTP request completed method=%s path=%s status=%s duration_ms=%.1f",
+                request.method,
+                request.url.path,
+                response.status_code,
+                (time.perf_counter() - started) * 1000,
+            )
+        finally:
+            if response_project_token is not None:
+                project_id_var.reset(response_project_token)
+        return response
+    finally:
+        project_id_var.reset(project_token)
+        request_id_var.reset(request_token)
+
+
 # Before this module's routes: /export/valuation.xlsx must win over the generic /export/{fmt}.
 app.include_router(reports.router)
 
@@ -261,6 +309,8 @@ async def create_project(
     _check_upload_limits(uploads)
     store = _store(request)
     project = store.create_project(name, uploads)
+    project_id_var.set(project.id)
+    request.state.project_id = project.id
     with store.lock(project.id):
         store.append_audit(project.id, "create_project", request.state.username, detail=project.name)
     return {"id": project.id}
