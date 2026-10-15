@@ -260,7 +260,7 @@ async def run_analysis(project_id: str, store: ProjectStore, config: AppConfig, 
             store.save_job(project_id, job)
         file = project.files[item.file_index]
         path = store.upload_path(project_id, item.file_index)
-        logger.info("Analysis page started file=%s page_index=%d", file.name, item.page_index)
+        logger.info("Analysis page started file=%r page_index=%d", file.name, item.page_index)
         try:
             marks, runs = await asyncio.to_thread(extract_marks, str(path), item.page_index)
             chains = build_chains(marks)
@@ -292,7 +292,7 @@ async def run_analysis(project_id: str, store: ProjectStore, config: AppConfig, 
             item.status = "done"
         except _RunAbortedError as exc:
             logger.error(
-                "Analysis page failed file=%s page_index=%d error=%s duration_ms=%.1f",
+                "Analysis page failed file=%r page_index=%d error=%s duration_ms=%.1f",
                 file.name,
                 item.page_index,
                 exc,
@@ -307,7 +307,7 @@ async def run_analysis(project_id: str, store: ProjectStore, config: AppConfig, 
             return
         except Exception as exc:
             logger.exception(
-                "Analysis page failed file=%s page_index=%d duration_ms=%.1f",
+                "Analysis page failed file=%r page_index=%d duration_ms=%.1f",
                 file.name,
                 item.page_index,
                 (time.perf_counter() - item_started) * 1000,
@@ -315,7 +315,7 @@ async def run_analysis(project_id: str, store: ProjectStore, config: AppConfig, 
             item.status, item.error = "error", f"{type(exc).__name__}: {exc}"
         else:
             logger.info(
-                "Analysis page done file=%s page_index=%d duration_ms=%.1f",
+                "Analysis page done file=%r page_index=%d duration_ms=%.1f",
                 file.name,
                 item.page_index,
                 (time.perf_counter() - item_started) * 1000,

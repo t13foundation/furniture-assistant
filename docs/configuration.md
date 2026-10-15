@@ -68,9 +68,10 @@ Source of truth: the mapping tables in `config/settings.py`. Defaults below are 
 |---|---|---|---|
 | `FA_TRACING_ENABLED` | `tracing.enabled` | `true` / `1` / `yes`. Enables PydanticAI/OpenTelemetry instrumentation in the web app and legacy pipeline; forced off in e2e runs. | `true` |
 | `FA_TRACING_BACKEND` | `tracing.backend` | `langfuse` / `phoenix` / `none`. Langfuse initializes its client; Phoenix exports through the configured OpenTelemetry environment. | `langfuse` |
-| `FA_TRACING_INCLUDE_BINARY_CONTENT` | `tracing.include_binary_content` | Include image/binary model content in telemetry events; this can expose drawing data. | YAML `true`; environment unset |
+| `FA_TRACING_INCLUDE_CONTENT` | `tracing.include_content` | Opt in to exporting prompts, extracted drawing text, tool arguments/results and module drafts. This can expose customer drawing content; keep disabled unless trace storage is approved. | `false` |
+| `FA_TRACING_INCLUDE_BINARY_CONTENT` | `tracing.include_binary_content` | Opt in to including image/binary model content in telemetry events; this can expose drawing data. | `false` |
 
-Tracing requires the selected backend to be configured. Langfuse uses `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` and `LANGFUSE_HOST`; Phoenix uses standard OpenTelemetry exporter settings. A local Langfuse stack: `docker compose -f docker-compose.dev.yml up -d` (UI on `http://localhost:3000`).
+Content capture is disabled by default in the web app, including image bytes. Enable either setting only when the trace backend and its retention/access controls are approved for drawing data.
 
 ### `input_dir`
 

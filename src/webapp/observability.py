@@ -16,6 +16,7 @@ _logging_lock = threading.Lock()
 _logging_handler: logging.Handler | None = None
 _tracing_lock = threading.Lock()
 _tracing_initialized = False
+_tracing_client: Any | None = None
 
 
 def valid_request_id(value: str | None) -> bool:
@@ -71,28 +72,30 @@ def configure_logging() -> None:
 
 def configure_tracing(config: Any) -> Any | None:
     """Enable PydanticAI spans and initialize the configured exporter once per process."""
-    global _tracing_initialized
-    if not config.tracing.enabled or config.tracing.backend == "none":
-        from pydantic_ai import Agent
+    global _tracing_initialized, _tracing_client
+    from pydantic_ai import Agent
 
+    if not config.tracing.enabled or config.tracing.backend == "none":
         Agent.instrument_all(False)
         return None
     with _tracing_lock:
-        if _tracing_initialized:
-            return None
         try:
-            from pydantic_ai import Agent
             from pydantic_ai.models.instrumented import InstrumentationSettings
 
-            client = None
-            if config.tracing.backend == "langfuse":
-                from langfuse import Langfuse
+            if not _tracing_initialized:
+                if config.tracing.backend == "langfuse":
+                    from langfuse import Langfuse
 
-                client = Langfuse(should_export_span=lambda span: True)
-            Agent.instrument_all(InstrumentationSettings(include_binary_content=config.tracing.include_binary_content))
-            _tracing_initialized = True
+                    _tracing_client = Langfuse(should_export_span=lambda span: True)
+                _tracing_initialized = True
+            Agent.instrument_all(
+                InstrumentationSettings(
+                    include_content=config.tracing.include_content,
+                    include_binary_content=config.tracing.include_binary_content,
+                )
+            )
             logging.getLogger(__name__).info("PydanticAI tracing enabled (backend=%s)", config.tracing.backend)
-            return client
+            return _tracing_client
         except Exception:
             logging.getLogger(__name__).exception("PydanticAI tracing initialization failed")
             return None

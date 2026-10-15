@@ -76,6 +76,7 @@ class OcrConfig:
 class TracingConfig:
     enabled: bool = False
     backend: str = "langfuse"  # "langfuse" | "phoenix" | "none"
+    include_content: bool = False
     include_binary_content: bool = False
 
 
@@ -174,6 +175,10 @@ class AppConfig:
             {
                 "FA_TRACING_ENABLED": ("enabled", lambda v: v.lower() in ("true", "1", "yes")),
                 "FA_TRACING_BACKEND": ("backend", str),
+                "FA_TRACING_INCLUDE_CONTENT": (
+                    "include_content",
+                    lambda v: v.lower() in ("true", "1", "yes"),
+                ),
                 "FA_TRACING_INCLUDE_BINARY_CONTENT": (
                     "include_binary_content",
                     lambda v: v.lower() in ("true", "1", "yes"),

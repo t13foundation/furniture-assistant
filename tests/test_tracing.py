@@ -26,12 +26,14 @@ class TestTracingConfig:
         tc = TracingConfig()
         assert tc.enabled is False
         assert tc.backend == "langfuse"
+        assert tc.include_content is False
         assert tc.include_binary_content is False
 
     def test_from_yaml(self) -> None:
         config = AppConfig.from_yaml()
         assert config.tracing.backend == "langfuse"
-        assert config.tracing.include_binary_content is True
+        assert config.tracing.include_content is False
+        assert config.tracing.include_binary_content is False
 
     def test_env_override_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("FA_TRACING_ENABLED", "true")
@@ -300,7 +302,8 @@ class TestYamlTracingConfig:
             raw = yaml.safe_load(f)
         assert raw["tracing"]["backend"] == "langfuse"
 
-    def test_include_binary_content_true(self) -> None:
+    def test_content_capture_disabled_by_default(self) -> None:
         with open("config/default.yaml") as f:
             raw = yaml.safe_load(f)
-        assert raw["tracing"]["include_binary_content"] is True
+        assert raw["tracing"]["include_content"] is False
+        assert raw["tracing"]["include_binary_content"] is False
