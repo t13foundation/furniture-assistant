@@ -183,10 +183,12 @@ with patch("src.pipeline.agent.create_model", return_value=TestModel()):
         instrument=settings,
     )
     asyncio.run(agent.run("PRIVATE_DRAWING_TEXT"))
+spans = exporter.get_finished_spans()
+assert any(span.name == "agent run" for span in spans)
 serialized = json.dumps(
     [
         {"attributes": dict(span.attributes), "events": [dict(event.attributes) for event in span.events]}
-        for span in exporter.get_finished_spans()
+        for span in spans
     ],
     default=str,
 )
