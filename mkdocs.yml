@@ -1,0 +1,56 @@
+site_name: Furniture Assistant
+site_description: Extract furniture cutting lists (panel dimensions, board type, edge banding, hardware, qty) from architectural and CAD drawings for CNC manufacturing
+repo_url: https://github.com/t13foundation/furniture-assistant
+edit_uri: edit/dev/docs/
+docs_dir: docs
+
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Data model: data-model.md
+  - API: api.md
+  - Review workflow: review-workflow.md
+  - Pricing and quotes: pricing.md
+  - Configuration: configuration.md
+  - Operations: operations.md
+  - Development: development.md
+  - Design decisions: decisions.md
+  - Production readiness: production-readiness.md
+
+theme:
+  name: material
+  palette:
+    primary: indigo
+    accent: teal
+  features:
+    - content.code.copy
+    - navigation.instant
+    - navigation.sections
+    - search.suggest
+    - search.highlight
+
+markdown_extensions:
+  - tables
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [.]
+          options:
+            show_source: false
+            show_root_heading: true
+            show_root_toc_entry: false
+            members_order: source
+            docstring_style: google
