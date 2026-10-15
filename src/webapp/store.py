@@ -157,7 +157,10 @@ class ProjectStore:
         """Serialize project access within threads and across processes on a shared filesystem."""
         project_id = Path(project_id).name
         with self._locks_guard:
-            return self._locks.setdefault(project_id, ProjectLock(self.root / project_id))
+            lock = self._locks.get(project_id)
+            if lock is None:
+                lock = self._locks[project_id] = ProjectLock(self.root / project_id)
+            return lock
 
     def project_dir(self, project_id: str) -> Path:
         path = self.root / Path(project_id).name
