@@ -1,0 +1,68 @@
+# furniture-assistant — Furniture Cutting-List Extraction Pipeline
+# Extracts panel/part data (dimensions, board type, edge banding, hardware, qty)
+# from architectural PDFs/images and CAD files to drive CNC manufacturing.
+# Override via env vars (FA_ prefix) or CLI args.
+#
+# Model server: LM Studio (http://localhost:1234/v1)
+
+# Default input directory — customer project drawings live here (gitignored).
+input_dir: "sample-data"
+
+api:
+  base_url: "http://127.0.0.1:1234/v1"
+  timeout: 120
+
+models:
+  # Orchestrator: drives the explore/summarize/validate flow and calls tools
+  orchestrator: "qwen/qwen3.6-35b-a3b"
+  # Vision: processes drawing images through the same LM Studio server
+  vision: "internvl3-78b-instruct"
+  # Vision API base — normally the same LM Studio server as the orchestrator
+  vision_api_base: "http://localhost:1234/v1"
+  # Benchmark: list of models to compare side-by-side
+  benchmark:
+    - "qwen3.6-35b"
+    - "qwen3.5-35b"
+
+pipeline:
+  max_passes: 3
+  confidence_threshold: "MEDIUM"
+  max_iterations: 20
+  retry_attempts: 3
+  retry_max_wait: 30
+  validation_max_iterations: 25
+  context_window: 262144  # Override with FA_CONTEXT_WINDOW env var.
+  # Compatibility field; the explore/summarize/validate flow is fixed.
+  mode: "single"
+  # Validation strategy: "confidence-based" or "always-critical"
+  validation_mode: "always-critical"
+
+document:
+  overview_max_width: 800     # Overview sent as BinaryImage in user prompt (native vision encoding)
+  detail_max_px: 1200         # Detail crops via tools — JPEG at 1200px keeps native vision tokens low
+  title_block_max_px: 4000    # Title block cells get much higher resolution for small text
+  grid_divisions: 10
+  pdf_render_scale: 2.0
+  overview_format: "JPEG"     # All images use native vision encoding via BinaryImage
+  overview_quality: 85
+  detail_format: "JPEG"       # JPEG for detail crops — native vision handles it well
+  detail_quality: 80
+  tile_overlap: 0.15          # 15% overlap between tiles — prevents splitting dimension lines/callouts
+  # When true, all pages of a multi-page PDF are rendered and made available to tools.
+  # Each page is addressable via a page_index (0-based) on DocumentLoader methods.
+  multipage: true
+
+output:
+  dir: "results"
+  format: "xlsx"  # xlsx | json | both
+
+ocr:
+  # Backend: "vlm" (default VL model), "olmocr", "glm-ocr"
+  backend: "vlm"
+
+tracing:
+  enabled: true  # Set true + env vars to activate
+  backend: "langfuse"  # langfuse | phoenix | none
+  include_binary_content: true
+  # Env vars: LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_HOST
+  # Or: FA_TRACING_ENABLED=true, FA_TRACING_BACKEND=langfuse

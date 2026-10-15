@@ -1,0 +1,84 @@
+# Construction rules for the furniture carcass builder (src/furniture/build.py).
+# Shop placeholders — edit to match the workshop standard; no code changes needed.
+
+# Board thicknesses
+carcass_thickness_mm: 18
+front_thickness_mm: 19
+back_thickness_mm: 8
+
+# Fronts (overlay construction) and plinth
+front_gap_mm: 3
+plinth_default_mm: 100
+plinth_recess_mm: 50
+
+# Used when the drawing page does not show the module depth (flagged DEPTH_ASSUMED)
+depth_default_mm: 600
+shelf_setback_mm: 10
+
+# Drawer boxes
+drawer_box_thickness_mm: 16
+drawer_box_bottom_mm: 8
+drawer_runner_clearance_mm: 13
+drawer_box_height_reduction_mm: 50
+drawer_box_depth_reduction_mm: 80
+
+# Sheet nesting
+sheet_length_mm: 2800
+sheet_width_mm: 2070
+sheet_trim_mm: 10
+kerf_mm: 4
+
+# Wall cladding (no carcass box or plinth)
+cladding_thickness_mm: 18
+mounting_batten_thickness_mm: 30
+mounting_batten_depth_mm: 40
+mounting_batten_spacing_mm: 600
+
+plausibility:
+  width_max_mm: 8000
+  height_max_mm: 3200
+  height_min_mm: 200
+  depth_max_mm: 1200
+  depth_min_mm: 100
+  wall_cladding_depth_min_mm: 10
+  column_width_min_mm: 100
+  cell_height_min_mm: 50
+  plinth_max_mm: 300
+
+
+# Hardware quantity standards (shop placeholders)
+hardware:
+  hinge_height_thresholds_mm: [900, 1600, 2000]
+  hinge_counts: [2, 3, 4, 5]
+  runner_lengths_mm: [250, 300, 350, 400, 450, 500, 550, 600]
+  leg_base_qty: 4
+  leg_extra_per_started_mm: 600
+  leg_extra_qty: 2
+  connector_per_joint: 4
+  connector_depth_scale_mm: 600
+  back_fixing_perimeter_step_mm: 250
+  disabled_categories_by_kind:
+    bench: [leg]
+
+# Time standards, minutes per respective unit (shop placeholders)
+processes:
+  cut_part_minutes: 2.0
+  cut_per_metre_minutes: 1.5
+  edge_band_per_metre_minutes: 2.0
+  hinge_cup_minutes: 2.0
+  confirmat_hole_minutes: 0.5
+  shelf_support_hole_minutes: 0.4
+  runner_screw_minutes: 0.5
+  carcass_assembly_minutes: 20.0
+  drawer_assembly_minutes: 8.0
+  back_assembly_minutes: 8.0
+  hinge_mount_minutes: 4.0
+  front_adjustment_minutes: 3.0
+  runner_mount_minutes: 5.0
+  handle_mount_minutes: 2.0
+  rail_mount_minutes: 5.0
+  leg_mount_minutes: 5.0
+  installation_per_module_minutes: 30.0
+  installation_per_m2_minutes: 15.0
+  wall_cladding_installation_per_m2_minutes: 15
+  installation_per_metre_minutes: 10.0

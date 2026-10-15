@@ -1,0 +1,31 @@
+# PLACEHOLDER rates only: replace with current supplier and workshop prices before quoting.
+currency: PLN
+boards:
+  - match: ""
+    kind: laminated_board
+    thickness_mm: 18
+    price_per_m2: 95.0
+  - match: ""
+    kind: laminated_board
+    thickness_mm: 19
+    price_per_m2: 105.0
+  - match: ""
+    kind: laminated_board
+    thickness_mm: 8
+    price_per_m2: 55.0
+edge_banding_per_m: 1.5
+hardware:
+  hinge: 8.0
+  runner: 45.0
+  handle: 12.0
+  push_open: 25.0
+  shelf_support: 0.2
+  hanging_rail: 18.0
+  rail_holder: 2.0
+  leg: 4.0
+  connector: 0.5
+  back_fixing: 0.1
+  lighting: 35.0
+  other: 0.0
+labour_rate_per_hour: 90.0
+updated_at: null
