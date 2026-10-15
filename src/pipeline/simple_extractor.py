@@ -10,6 +10,7 @@ import json
 import logging
 import re
 import time
+from typing import TypedDict
 
 import httpx
 
@@ -49,8 +50,14 @@ Look for:
 Use the same field format as the first step."""
 
 
+class WorkflowStep(TypedDict):
+    tile: tuple[int, int]
+    focus: str
+    prompt: str
+
+
 # 3x3 grid positions: row 0=top, 2=bottom. col 0=left, 2=right.
-WORKFLOW_STEPS = [
+WORKFLOW_STEPS: list[WorkflowStep] = [
     {
         "tile": (2, 2),  # bottom-right = title block
         "focus": "title block data",

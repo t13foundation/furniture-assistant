@@ -214,9 +214,6 @@ class TestFlushBehavior:
         config = _make_config(tracing_enabled=False)
         pipeline = DrawingPipeline(config)
         assert pipeline._langfuse is None
-        # Accessing _langfuse shouldn't crash
-        if pipeline._langfuse:
-            pipeline._langfuse.flush()  # would not run
 
     def test_flush_called_in_process_drawing(self) -> None:
         from src.schema.extraction import FieldExtraction

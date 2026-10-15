@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import TypedDict
 
 from src.document.loader import DocumentLoader
 from src.ocr.base import OCRBackend
@@ -22,8 +23,16 @@ from src.schema.extraction import ExtractionResult
 
 logger = logging.getLogger(__name__)
 
+
+class TileStep(TypedDict):
+    tile: tuple[int, int]
+    label: str
+    focus: str
+    category: str
+
+
 # Smart tile order: title block first, specs second, then drawing body, then headers
-TILE_ORDER = [
+TILE_ORDER: list[TileStep] = [
     {"tile": (2, 2), "label": "bottom-right", "focus": "title block data", "category": "title_block"},
     {"tile": (2, 0), "label": "bottom-left", "focus": "specifications and notes", "category": "specs"},
     {"tile": (2, 1), "label": "bottom-center", "focus": "title block continuation", "category": "title_block"},
@@ -186,7 +195,8 @@ async def extract_drawing_step_by_step(
 
         # Phase A: OCR text extraction (for dedicated OCR backends)
         if is_ocr_backend:
-            ocr_text, ocr_tokens = await ocr_backend.extract_text(image_bytes, media_type)
+            # An empty prompt selects the dedicated backend's default text prompt.
+            ocr_text, ocr_tokens = await ocr_backend.extract_text(image_bytes, media_type, "")
             total_tokens += ocr_tokens
             _print_ocr_output(ocr_text, ocr_backend.name)
 

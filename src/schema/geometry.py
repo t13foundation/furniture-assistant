@@ -58,7 +58,7 @@ def reconcile_panel_geometry(result: ExtractionResult) -> list[str]:
     duplicate views or separate physical pieces.
     """
 
-    buckets: dict[tuple[object, ...], list[tuple[int, Panel]]] = defaultdict(list)
+    buckets: dict[tuple[str, float, float, float | None], list[tuple[int, Panel]]] = defaultdict(list)
     unresolved: list[tuple[int, Panel]] = []
     for index, panel in enumerate(result.panels):
         length = _dimension(panel.length_mm)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from src.schema.enums import ConfidenceLevel
 from src.schema.extraction import ExtractionResult
 from src.schema.validation import merge_diff
@@ -85,9 +87,9 @@ class TestToolRegistry:
 
 
 class TestMergeDiff:
-    def _make_result(self, **overrides) -> ExtractionResult:
+    def _make_result(self, **overrides: Any) -> ExtractionResult:
         """Create a minimal ExtractionResult for testing."""
-        defaults = {"source_file": "test.pdf"}
+        defaults: dict[str, Any] = {"source_file": "test.pdf"}
         defaults.update(overrides)
         return ExtractionResult(**defaults)
 

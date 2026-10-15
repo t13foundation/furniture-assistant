@@ -7,7 +7,7 @@ Review of the Furniture Assistant web app against real-deployment requirements, 
 | Priority | Findings | Done | Partly done | Open |
 |---|---|---|---|---|
 | P0 — blocks real deployment | 6 | 1 | 2 | 3 |
-| P1 — needed before customer-facing use | 10 | 1 | 0 | 9 |
+| P1 — needed before customer-facing use | 10 | 2 | 0 | 8 |
 | P2 — quality and robustness | 7 | 0 | 0 | 7 |
 
 Top 5 open items, in order of risk:
@@ -51,7 +51,7 @@ Explicitly **not** implemented from the same list: the `analyze` 503 probe of th
 | Backups / retention | State is plain files with no backup job and no retention for `history-archive-*` and the `pages/` PNG cache (hundreds of MB per multi-page PDF). | `src/webapp/store.py:7-10` (layout, page-render cache), `src/webapp/store.py:294-295` (archives), store root under `results/` (`src/webapp/api.py:130`) | Documented backup of `results/webapp`; cleanup task for archives and page renders older than N days. | S | Open |
 | Frontend structure | One ~1.3 MB JS chunk, no code splitting; `ModuleView.tsx` is 1142 lines and `Reports.tsx` 833; 3 `set-state-in-effect` lint warnings (re-verified with `npm run lint`). | `webapp/dist/assets/index-BaU_FseK.js` (1,322,409 bytes, single chunk), `webapp/src/ModuleView.tsx`, `webapp/src/Reports.tsx`; warnings at `webapp/src/ProjectView.tsx:129`, `webapp/src/Reports.tsx:61`, `webapp/src/Reports.tsx:481` | Route-level `React.lazy`; split `ModuleView` into Review/Editor/Header components; derive the effect-set state during render. | M | Open |
 | Frontend resilience | A render error used to blank the whole page (no error boundary). | `webapp/src/ErrorBoundary.tsx`, wrapped around the router at `webapp/src/App.tsx:63-116` | Done: boundary shows the error and a "Reload" button. | S | Done |
-| Type gate | Pre-existing `ty` diagnostics in `src/tools`, `src/pipeline` and the legacy tests block a full-repo type check, so CI scopes the gate to the new code. | `.github/workflows/ci.yml:25-26` ("legacy pipeline has pre-existing diagnostics" → `uvx ty check src/furniture src/webapp`) | Fix the diagnostics or exclude the legacy paths via `ty.toml`, then widen the CI gate. | M | Open |
+| Type gate | The whole repository now passes `ty`; no path exclusions or rule overrides are needed. | `uvx ty check` reports `All checks passed!`; `.github/workflows/ci.yml:23-26` runs the full-repository formatter and type gate. | Done: fixed genuine type issues in legacy modules and tests; CI now checks the entire repository. | M | Done |
 | Quote comparison | Matches by cabinet code only; an unmatched line (for example a sanitary-block cabinet priced under a label with no code) cannot be mapped manually. | `src/furniture/quote.py:92-106` (code→module lookup; `app_amount` stays `None` when nothing matches) | Manual code assignment in the quote UI. | M | Open |
 
 ## P2 — quality and robustness
