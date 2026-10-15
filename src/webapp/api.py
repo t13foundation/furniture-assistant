@@ -14,10 +14,10 @@ from typing import Annotated, Literal
 
 from config.settings import AppConfig
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, StringConstraints
 
 from src.furniture.export import write_cut_list_csv, write_cut_list_xlsx, write_panels_dxf, write_sheets_svg
 from src.furniture.resolve import (
@@ -68,6 +68,10 @@ class HealthResponse(BaseModel):
     model_base_url: str
     projects_root_writable: bool
     auth_enabled: bool
+
+
+class ProjectNameBody(BaseModel):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
 
 
 class ProjectListResponse(Project):
@@ -280,6 +284,28 @@ def _check_upload_limits(uploads: list[tuple[str, bytes]]) -> None:
     for file_name, data in uploads:
         if len(data) > max_mb * 1024 * 1024:
             raise HTTPException(413, f"File {file_name} exceeds {max_mb} MB")
+
+
+@app.patch("/api/projects/{project_id}", response_model=Project)
+def rename_project(request: Request, project_id: str, body: ProjectNameBody) -> Project:
+    store = _store(request)
+    _require_project(store, project_id)
+    with store.lock(project_id):
+        project = store.rename_project(project_id, body.name)
+        store.append_audit(project_id, "rename_project", request.state.username, detail=project.name)
+    return project
+
+
+@app.delete("/api/projects/{project_id}", status_code=204)
+def delete_project(request: Request, project_id: str) -> Response:
+    store = _store(request)
+    _require_project(store, project_id)
+    with store.lock(project_id):
+        if _running(request, project_id) or _refine_running(request, project_id):
+            raise HTTPException(409, "Cannot delete a project while analysis or model re-run is in progress")
+        store.append_audit(project_id, "delete_project", request.state.username)
+        store.move_project_to_trash(project_id)
+    return Response(status_code=204)
 
 
 @app.post("/api/projects/{project_id}/analyze", status_code=202)

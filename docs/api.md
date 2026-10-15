@@ -26,7 +26,8 @@ Auth is enabled as soon as the users file (`FA_USERS_FILE`, default `config/user
 | GET | `/api/projects` | — | `ProjectListResponse[]` — project fields plus `job_status`, `module_count` | cookie |
 | POST | `/api/projects` | multipart `files[]` + form `name` | `201 {id}` | cookie |
 | GET | `/api/projects/{project_id}` | — | `ProjectDetailResponse {project, job, modules}` | cookie |
-
+| PATCH | `/api/projects/{project_id}` | `ProjectNameBody {name}` (trimmed, 1–120 characters) | `Project` | cookie |
+| DELETE | `/api/projects/{project_id}` | — | `204`; moves project to trash | cookie |
 Uploads accept the drawing extensions `.pdf .tif .tiff .png .jpg .jpeg .dwg .p3d`. Limits are enforced per request: `FA_MAX_UPLOAD_MB` (default 50 MB per file) and `FA_MAX_FILES` (default 50 files) — both return `413`.
 
 The detail response is the polling endpoint: `job` is the current analysis job (`status` `queued → running → done | error`, per-page `items` with `pending/running/done/skipped/error` and produced `module_ids`), and `modules` lists every module with `status`, `question_count`, `attention_count`, `refine_status` and error/warning `issue_counts`. A job left `queued`/`running` by a server restart is reported as `error` ("Analysis interrupted (server restarted)") — run the analysis again.
@@ -117,7 +118,7 @@ The upload is stored as `quote.xlsx` (original) and `quote.json` (parsed lines) 
 | 400 | upload with no files or an unsupported extension; client quote that is not `.xlsx` |
 | 401 | missing/expired session on a non-public path; wrong credentials at login |
 | 404 | unknown project, module, version or page; no client quote uploaded yet |
-| 409 | `analyze` while an analysis or model re-run is in flight; `refine` while one is already running or the project is being analysed |
+| 409 | `analyze` while an analysis or model re-run is in flight; `refine` while one is already running or the project is being analysed; project deletion while a job is running |
 | 413 | a file exceeds `FA_MAX_UPLOAD_MB`, or more than `FA_MAX_FILES` files in one project |
 | 422 | request validation; module assembly errors on PUT/answers (e.g. an override a module cannot take); refine on a hand-made module (no model interpretation); unreadable quote workbook |
 | 429 | login throttled (5 failures per ip+username within 15 min → 5 min lock) |

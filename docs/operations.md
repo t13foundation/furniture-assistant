@@ -79,6 +79,21 @@ File types are restricted to drawing formats (PDF/PNG/JPG/TIFF/DWG/P3D); anythin
 
 Jobs live in memory only. On restart, a job left `queued`/`running` is reported as `error` ("Analysis interrupted (server restarted)") the next time the project is read, with an audit entry; the user re-runs the analysis from the UI. Already-built modules, history and overrides survive — only the in-flight run is lost.
 
+## Project deletion and trash
+
+`DELETE /api/projects/{id}` writes a `delete_project` audit entry, then moves the
+entire project directory out of the projects root to
+`<FA_OUTPUT_DIR>/webapp/trash/<id>-<timestamp>` (default: `results/webapp/trash/`).
+Nothing is recursively removed by the API. The trashed directory retains its
+project files and audit log but is no longer listed or accessible through project
+endpoints. Deletion returns `409` while analysis or a model re-run is active.
+
+To restore a project, move its directory back under
+`<FA_OUTPUT_DIR>/webapp/projects/` using the original project ID (the portion before
+the timestamp suffix); do not overwrite an existing project directory. To purge a
+deleted project permanently, remove its selected directory from `trash/` only after
+confirming it is no longer needed and required backups are complete.
+
 ## Storage and backups
 
 All state is plain files under the projects root — `<FA_OUTPUT_DIR>/webapp/projects`, default `results/webapp/projects`. Each project directory contains `project.json`, `uploads/`, `pages/` (cached PNG renders), `modules/` with `history/` (versions, `history-archive-*` after a re-analysis), `audit.jsonl`, `job.json`, `pricing.yaml`, `quote.xlsx`/`quote.json` and `exports/`.

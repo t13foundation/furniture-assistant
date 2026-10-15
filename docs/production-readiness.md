@@ -7,7 +7,7 @@ Review of the Furniture Assistant web app against real-deployment requirements, 
 | Priority | Findings | Done | Partly done | Open |
 |---|---|---|---|---|
 | P0 — blocks real deployment | 6 | 1 | 2 | 3 |
-| P1 — needed before customer-facing use | 10 | 1 | 0 | 9 |
+| P1 — needed before customer-facing use | 10 | 2 | 0 | 8 |
 | P2 — quality and robustness | 7 | 0 | 0 | 7 |
 
 Top 5 open items, in order of risk:
@@ -43,7 +43,7 @@ Explicitly **not** implemented from the same list: the `analyze` 503 probe of th
 
 | Area | Finding | Evidence | Fix | Effort | Status |
 |---|---|---|---|---|---|
-| Project lifecycle | No project deletion or rename endpoint; projects accumulate forever under `results/webapp/projects`. The only DELETE route resets a project's pricing override. | `src/webapp/api.py` and `src/webapp/reports.py` route lists (no `@app.delete` for projects; `src/webapp/reports.py:102` is `DELETE .../pricing`), `src/webapp/api.py:130` + `config/default.yaml:55-56` (store root) | `DELETE /api/projects/{id}` that moves the directory to `trash/`, audited, with a UI button. | S | Open |
+| Project lifecycle | Projects previously had no deletion or rename endpoint, so they accumulated under `results/webapp/projects`. | `src/webapp/api.py` (`PATCH`/`DELETE /api/projects/{project_id}`), `src/webapp/store.py` (project rename and trash move), `tests/test_webapp_api.py` (rename audit, delete-to-trash, list/get 404 and running-job conflict) | Done: rename is audited; deletion is audited and moves the project directory to `<FA_OUTPUT_DIR>/webapp/trash/` (never recursively removed). Active analysis/refine jobs return `409`; trash is excluded from project lookup and listing. | S | Done |
 | Authorization | Authentication exists, authorization does not: every logged-in user sees every project; no roles (viewer/editor/admin). | `src/webapp/users.py:12-17` (add/remove/list only), `src/webapp/auth.py:174-177` (user entries are salt + password hash, nothing else) | `role` field in the users file; project ACLs later. | M | Open |
 | Auditability | The audit log and module versions are plain per-project files; nothing is tamper-evident or exported. | `src/webapp/store.py:233-247` (`audit.jsonl` append), `src/webapp/store.py:294-295` (version history, `history-archive-*`) | Hash-chain the lines or ship them to a central log. | M | Open |
 | Cost control | No per-project token/cost accounting in the web app; a large multi-view project run takes ~9 min of model calls and the UI shows nothing about usage (the legacy pipeline has token reports; the web app does not reuse them). | `src/webapp/store.py:54-59` (`Job` has no usage fields), `src/webapp/analysis.py:203-262` (`run_analysis` records per-page status only) | Record usage from the agent results into `job.json` and show it per project. | S | Open |

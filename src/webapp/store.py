@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import shutil
 import tempfile
 import threading
 import time
@@ -151,6 +152,21 @@ class ProjectStore:
 
     def load_project(self, project_id: str) -> Project:
         return Project.model_validate_json((self.project_dir(project_id) / "project.json").read_text(encoding="utf-8"))
+
+    def rename_project(self, project_id: str, name: str) -> Project:
+        with self.lock(project_id):
+            project = self.load_project(project_id)
+            project.name = name
+            _write_atomic(self.project_dir(project_id) / "project.json", project.model_dump_json(indent=2))
+            return project
+
+    def move_project_to_trash(self, project_id: str) -> Path:
+        source = self.project_dir(project_id)
+        trash = self.root.parent / "trash"
+        trash.mkdir(parents=True, exist_ok=True)
+        destination = trash / f"{source.name}-{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+        shutil.move(str(source), str(destination))
+        return destination
 
     def upload_path(self, project_id: str, file_index: int) -> Path:
         project = self.load_project(project_id)

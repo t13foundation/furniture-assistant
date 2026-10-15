@@ -216,23 +216,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/analyze": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Analyze */
-        post: operations["analyze_api_projects__project_id__analyze_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/projects/{project_id}": {
         parameters: {
             query?: never;
@@ -244,6 +227,25 @@ export interface paths {
         get: operations["get_project_api_projects__project_id__get"];
         put?: never;
         post?: never;
+        /** Delete Project */
+        delete: operations["delete_project_api_projects__project_id__delete"];
+        options?: never;
+        head?: never;
+        /** Rename Project */
+        patch: operations["rename_project_api_projects__project_id__patch"];
+        trace?: never;
+    };
+    "/api/projects/{project_id}/analyze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Analyze */
+        post: operations["analyze_api_projects__project_id__analyze_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1401,6 +1403,11 @@ export interface components {
             /** Module Count */
             module_count: number;
         };
+        /** ProjectNameBody */
+        ProjectNameBody: {
+            /** Name */
+            name: string;
+        };
         /** ProjectPricing */
         ProjectPricing: {
             pricing: components["schemas"]["Pricing"];
@@ -2115,37 +2122,6 @@ export interface operations {
             };
         };
     };
-    analyze_api_projects__project_id__analyze_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StatusResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     get_project_api_projects__project_id__get: {
         parameters: {
             query?: never;
@@ -2164,6 +2140,101 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_project_api_projects__project_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_project_api_projects__project_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectNameBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    analyze_api_projects__project_id__analyze_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusResponse"];
                 };
             };
             /** @description Validation Error */

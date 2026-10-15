@@ -127,3 +127,16 @@ test('narrow screens hide the sidebar behind a menu button', async ({ page }) =>
   await menu.click()
   await expect(page.getByRole('link', { name: /Szafa testowa/ }).first()).toBeVisible()
 })
+
+test('rename and delete a project', async ({ page }) => {
+  await page.goto(projectUrl)
+  await page.getByRole('button', { name: 'Rename project' }).click()
+  await page.getByLabel('Project name').fill('Renamed E2E project')
+  await page.getByRole('button', { name: 'Save project name' }).click()
+  await expect(page.getByText('Renamed E2E project')).toBeVisible()
+
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: 'Delete project' }).click()
+  await expect(page).toHaveURL(/#\/$/)
+  await expect(page.getByText('No projects yet')).toBeVisible()
+})

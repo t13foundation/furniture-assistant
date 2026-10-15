@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import time
 
 import pytest
@@ -47,6 +48,44 @@ def test_create_project_and_reject_unsupported_files(client):
     assert page.headers["content-type"] == "image/png"
     assert client.get(f"/api/projects/{project_id}/pages/0/3.png").status_code == 404
     assert client.get("/api/projects/nope").status_code == 404
+
+
+def test_rename_project_updates_name_and_audit(client):
+    project_id = _create(client)
+
+    renamed = client.patch(f"/api/projects/{project_id}", json={"name": "  renamed workspace  "})
+
+    assert renamed.status_code == 200
+    assert renamed.json()["name"] == "renamed workspace"
+    activity = client.get(f"/api/projects/{project_id}/activity").json()
+    assert activity[0]["action"] == "rename_project"
+    assert activity[0]["detail"] == "renamed workspace"
+    assert client.patch(f"/api/projects/{project_id}", json={"name": "  "}).status_code == 422
+    assert client.patch(f"/api/projects/{project_id}", json={"name": "x" * 121}).status_code == 422
+
+
+def test_delete_project_moves_to_trash_and_hides_it(client, tmp_path):
+    project_id = _create(client)
+
+    deleted = client.delete(f"/api/projects/{project_id}")
+
+    assert deleted.status_code == 204
+    trash = tmp_path / "webapp" / "trash"
+    trashed_project = next(trash.glob(f"{project_id}-*"))
+    audit = (trashed_project / "audit.jsonl").read_text(encoding="utf-8").splitlines()
+    assert json.loads(audit[-1])["action"] == "delete_project"
+    assert client.get(f"/api/projects/{project_id}").status_code == 404
+    assert client.get("/api/projects").json() == []
+    assert client.delete(f"/api/projects/{project_id}").status_code == 404
+
+
+def test_delete_project_conflicts_while_analysis_runs(client, monkeypatch):
+    async def slow_analysis(*_args, **_kwargs):
+        await asyncio.sleep(5)
+
+    monkeypatch.setattr(api, "run_analysis", slow_analysis)
+    project_id = _create(client)
+    assert client.post(f"/api/projects/{project_id}/analyze").status_code == 202
 
 
 def test_put_module_builds_and_exports(client, two_door_module):
