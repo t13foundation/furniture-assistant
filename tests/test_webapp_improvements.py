@@ -3,11 +3,12 @@ from __future__ import annotations
 import io
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
 from src.furniture.rules import ConstructionRules
 from src.furniture.schema import FurnitureModule, MaterialSpec, ModuleModel
-from src.webapp import api
+from src.webapp import api, auth
 
 from tests.conftest import sample_file
 
@@ -31,20 +32,20 @@ def test_auth_disabled_and_login_protects_api(tmp_path, monkeypatch):
     monkeypatch.setenv("FA_USERS_FILE", str(tmp_path / "users.yaml"))
     monkeypatch.setenv("FA_SESSION_SECRET", "test-secret")
     with TestClient(api.app) as client:
-        assert client.get("/api/auth/me").json() == {"username": None, "auth_enabled": False}
+        assert client.get("/api/auth/me").json() == {"username": None, "auth_enabled": False, "role": None}
         assert _create(client)
 
     from src.webapp.auth import add_user
 
     add_user("operator", "s3cret")
     with TestClient(api.app) as client:
-        assert client.get("/api/auth/me").json() == {"username": None, "auth_enabled": True}
+        assert client.get("/api/auth/me").json() == {"username": None, "auth_enabled": True, "role": None}
         assert client.get("/api/projects").status_code == 401
         assert client.get("/api/auth/me").status_code == 200
         assert client.post("/api/auth/login", json={"username": "operator", "password": "wrong"}).status_code == 401
         response = client.post("/api/auth/login", json={"username": "operator", "password": "s3cret"})
         assert response.status_code == 200
-        assert response.json() == {"username": "operator"}
+        assert response.json() == {"username": "operator", "role": "admin"}
         assert response.cookies.get("fa_session")
         assert client.get("/api/projects").status_code == 200
         assert client.post("/api/auth/logout").status_code == 200
@@ -84,6 +85,47 @@ def test_upload_limits_return_413(client, monkeypatch):
     assert response.status_code == 413
     assert response.json()["detail"] == "At most 1 files per project"
     assert client.get("/api/projects").json() == []
+
+
+def test_role_authorization_and_legacy_admin(tmp_path, monkeypatch, two_door_module):
+
+    monkeypatch.setenv("FA_OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setenv("FA_USERS_FILE", str(tmp_path / "users.yaml"))
+    monkeypatch.setenv("FA_SESSION_SECRET", "test-secret")
+    auth.add_user("viewer", "secret", role="viewer")
+    auth.add_user("editor", "secret", role="editor")
+    auth.add_user("legacy", "secret")
+    users_path = tmp_path / "users.yaml"
+    users = yaml.safe_load(users_path.read_text())
+    users["users"]["legacy"].pop("role")
+    users_path.write_text(yaml.safe_dump(users))
+    auth._USERS_CACHE = None
+    with TestClient(api.app) as client:
+        assert client.post("/api/auth/login", json={"username": "editor", "password": "secret"}).status_code == 200
+        project_id = _create(client)
+        module_url = f"/api/projects/{project_id}/modules/TEST"
+        assert client.put(module_url, json=two_door_module.model_dump(mode="json")).status_code == 200
+        client.post("/api/auth/logout")
+
+        viewer_login = client.post("/api/auth/login", json={"username": "viewer", "password": "secret"})
+        assert viewer_login.status_code == 200
+        assert client.get("/api/auth/me").json()["role"] == "viewer"
+        assert client.get("/api/projects").status_code == 200
+        assert client.put(module_url, json=two_door_module.model_dump(mode="json")).status_code == 403
+        assert client.post(f"/api/projects/{project_id}/analyze").status_code == 403
+        client.post("/api/auth/logout")
+
+        assert client.post("/api/auth/login", json={"username": "editor", "password": "secret"}).status_code == 200
+        pricing = client.get("/api/pricing").json()
+        assert client.put("/api/pricing", json=pricing).status_code == 403
+        changed = two_door_module.model_dump(mode="json")
+        changed["title"] = "Edited by editor"
+        assert client.put(module_url, json=changed).status_code == 200
+        client.post("/api/auth/logout")
+
+        assert client.post("/api/auth/login", json={"username": "legacy", "password": "secret"}).status_code == 200
+        assert client.get("/api/auth/me").json()["role"] == "admin"
+        assert client.put(module_url, json=two_door_module.model_dump(mode="json")).status_code == 200
 
 
 def test_audit_history_restore_and_review(client, two_door_module):
@@ -160,11 +202,13 @@ def test_users_cli_and_markup_suggestion(tmp_path, monkeypatch, capsys):
     from src.webapp import users
 
     monkeypatch.setenv("FA_USERS_FILE", str(tmp_path / "users.yaml"))
-    monkeypatch.setattr(sys, "argv", ["users", "add", "operator", "--password", "secret"])
+    monkeypatch.setattr(sys, "argv", ["users", "add", "operator", "--password", "secret", "--role", "viewer"])
+    users.main()
+    monkeypatch.setattr(sys, "argv", ["users", "set-role", "operator", "editor"])
     users.main()
     monkeypatch.setattr(sys, "argv", ["users", "list"])
     users.main()
-    assert capsys.readouterr().out.strip() == "operator"
+    assert capsys.readouterr().out.strip() == "operator\teditor"
     monkeypatch.setattr(sys, "argv", ["users", "remove", "operator"])
     users.main()
 

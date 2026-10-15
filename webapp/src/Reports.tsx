@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, ApiError } from './api'
+import { isViewer, useAuth } from './auth'
 import { ProjectSidebar, WorkspaceSidebar } from './ProjectView'
 import { materialKinds } from './types'
 import type {
@@ -439,7 +440,10 @@ function ValuationReport({ data }: { data: Valuation }) {
 /** Workspace-wide pricing; inside a project (``/p/:id/pricing``) it keeps that project's sidebar. */
 export function PricingSettings() {
   const { id } = useParams()
+  const { auth } = useAuth()
+  const viewer = isViewer(auth)
   const [detail, setDetail] = useState<ProjectDetail | null>(null)
+  const canSave = !viewer && (!auth.auth_enabled || id !== undefined || auth.role === 'admin')
   const [pricing, setPricing] = useState<Pricing | null>(null)
   const [inherited, setInherited] = useState(false)
   // Tagged with its project so another project's comparison is never shown while the next one loads.
@@ -579,13 +583,13 @@ export function PricingSettings() {
         {id && !inherited && (
           <p className="notice">
             Customized pricing for this project.{' '}
-            <button className="button secondary" onClick={() => void revertPricing()}>
+            <button className="button secondary" disabled={viewer} onClick={() => void revertPricing()}>
               Revert to workspace
             </button>
           </p>
         )}
         {id && (
-          <section className="report-card">
+          <section className="report-card" inert={!canSave}>
             <label>
               Markup percent
               <input
@@ -598,7 +602,7 @@ export function PricingSettings() {
             </label>
           </section>
         )}
-        <section className="report-card">
+        <section className="report-card" inert={!canSave}>
           <label>
             Currency
             <input
@@ -676,7 +680,7 @@ export function PricingSettings() {
             Add board price
           </button>
         </section>
-        <section className="report-card">
+        <section className="report-card" inert={!canSave}>
           <h2>Edge banding</h2>
           <label>
             Price per metre
@@ -694,7 +698,7 @@ export function PricingSettings() {
             />
           </label>
         </section>
-        <section className="report-card">
+        <section className="report-card" inert={!canSave}>
           <h2>Hardware price per unit</h2>
           {hardwareCategories.map((category) => (
             <label className="inline-field" key={category}>
@@ -718,7 +722,7 @@ export function PricingSettings() {
             </label>
           ))}
         </section>
-        <section className="report-card">
+        <section className="report-card" inert={!canSave}>
           <h2>Labour</h2>
           <label>
             Rate per hour
@@ -738,11 +742,18 @@ export function PricingSettings() {
         </section>
         {error && <p className="error-message">{error}</p>}
         {saved && <p className="notice">Pricing saved.</p>}
-        <button className="button primary" onClick={() => void save()}>
-          Save pricing
-        </button>
+        {canSave && (
+          <button className="button primary" onClick={() => void save()}>
+            Save pricing
+          </button>
+        )}
+        {!canSave && (
+          <p className="notice">
+            {viewer ? 'Read-only pricing access.' : 'Editors cannot save workspace pricing.'}
+          </p>
+        )}
         {id && (
-          <section className="report-card">
+          <section className="report-card" inert={viewer}>
             <h2>Compare with client quote</h2>
             <label>
               Quote workbook (.xlsx)

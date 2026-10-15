@@ -7,7 +7,7 @@ Review of the Furniture Assistant web app against real-deployment requirements, 
 | Priority | Findings | Done | Partly done | Open |
 |---|---|---|---|---|
 | P0 — blocks real deployment | 6 | 1 | 2 | 3 |
-| P1 — needed before customer-facing use | 10 | 1 | 0 | 9 |
+| P1 — needed before customer-facing use | 10 | 1 | 1 | 8 |
 | P2 — quality and robustness | 7 | 0 | 0 | 7 |
 
 Top 5 open items, in order of risk:
@@ -16,7 +16,7 @@ Top 5 open items, in order of risk:
 2. **Jobs do not survive a restart (P0).** An interrupted analysis is reported as an error and the user must click "Run analysis" again.
 3. **No model-server readiness check on `analyze` (P0, remainder).** The health endpoint exists, but a job is still accepted when the model server is down and fails on its first page instead of getting a 503.
 4. **`OPENAI_API_KEY` read from `.env` in the repo directory (P0).** No secret manager; anyone with repo-dir access can read the key.
-5. **No authorization model (P1).** Every logged-in user sees every project; there are no roles.
+5. **Auditability (P1).** The audit log and module history are plain per-project files and are neither tamper-evident nor exported.
 
 Done in this release (the review's "do now" list, each covered by tests in `tests/test_webapp_improvements.py`):
 
@@ -25,6 +25,9 @@ Done in this release (the review's "do now" list, each covered by tests in `test
 - Public `GET /api/health` endpoint (exempt from auth), reporting model URL, projects-root writability and auth state.
 - React `ErrorBoundary` around the router, so a render error shows a "Reload" page instead of a blank screen.
 - `WEB_PORT` Makefile variable (`make web WEB_PORT=8010`).
+- Central role enforcement for `viewer`, `editor`, and `admin`; legacy users without a role retain admin access.
+
+Per-project ACLs remain open: every authenticated role can read every project.
 
 Explicitly **not** implemented from the same list: the `analyze` 503 probe of the model server, the per-request total upload cap, and auto-detection of the cookie `secure` flag from a public URL (it is env-only; see the P0 table).
 
@@ -44,7 +47,7 @@ Explicitly **not** implemented from the same list: the `analyze` 503 probe of th
 | Area | Finding | Evidence | Fix | Effort | Status |
 |---|---|---|---|---|---|
 | Project lifecycle | No project deletion or rename endpoint; projects accumulate forever under `results/webapp/projects`. The only DELETE route resets a project's pricing override. | `src/webapp/api.py` and `src/webapp/reports.py` route lists (no `@app.delete` for projects; `src/webapp/reports.py:102` is `DELETE .../pricing`), `src/webapp/api.py:130` + `config/default.yaml:55-56` (store root) | `DELETE /api/projects/{id}` that moves the directory to `trash/`, audited, with a UI button. | S | Open |
-| Authorization | Authentication exists, authorization does not: every logged-in user sees every project; no roles (viewer/editor/admin). | `src/webapp/users.py:12-17` (add/remove/list only), `src/webapp/auth.py:174-177` (user entries are salt + password hash, nothing else) | `role` field in the users file; project ACLs later. | M | Open |
+| Authorization | Authentication has central role enforcement: viewer is read-only, editor can mutate projects but cannot save workspace-wide pricing, and admin can do all mutations. No per-project ACL exists. | `src/webapp/auth.py:143-169` (role middleware and backward-compatible admin default), `src/webapp/users.py:9-34` (role CLI), `src/webapp/api.py:63-66,151-154` (`/api/auth/me` role) | Partly done: per-project roles/ACLs remain a follow-up; all authenticated users still see every project. | M | Partly done |
 | Auditability | The audit log and module versions are plain per-project files; nothing is tamper-evident or exported. | `src/webapp/store.py:233-247` (`audit.jsonl` append), `src/webapp/store.py:294-295` (version history, `history-archive-*`) | Hash-chain the lines or ship them to a central log. | M | Open |
 | Cost control | No per-project token/cost accounting in the web app; a large multi-view project run takes ~9 min of model calls and the UI shows nothing about usage (the legacy pipeline has token reports; the web app does not reuse them). | `src/webapp/store.py:54-59` (`Job` has no usage fields), `src/webapp/analysis.py:203-262` (`run_analysis` records per-page status only) | Record usage from the agent results into `job.json` and show it per project. | S | Open |
 | Observability | Stdlib logging only: no request ids, no structured logs; tracing (`FA_TRACING_ENABLED`) is wired into the legacy pipeline settings but not into the web app's agents. | `src/webapp/analysis.py:37` (`logging.getLogger`), `src/webapp/api.py:138` (sole middleware is auth), `config/settings.py:175` (env mapping exists, unused by `src/webapp`) | Request-id middleware + JSON logs; wire `FA_TRACING_ENABLED` into the webapp agents. | M | Open |

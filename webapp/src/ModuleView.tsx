@@ -24,6 +24,7 @@ interface Props {
   model: ModuleModel
   files: { index: number; name: string }[]
   onUpdate: (model: ModuleModel) => void
+  canEdit: boolean
 }
 type Tab = 'drawing' | 'missing' | 'hardware' | 'processes' | 'history'
 const reasonLabels = {
@@ -52,7 +53,7 @@ const processLabels: Record<ProcessKind, string> = {
   hardware_mounting: 'Montaż okuć',
   installation: 'Montaż',
 }
-export default function ModuleView({ id, model, files, onUpdate }: Props) {
+export default function ModuleView({ id, model, files, onUpdate, canEdit }: Props) {
   const location = useLocation()
   const [editing, setEditing] = useState(false)
   const [tab, setTab] = useState<Tab>(location.search.includes('tab=review') ? 'missing' : 'drawing')
@@ -309,6 +310,7 @@ export default function ModuleView({ id, model, files, onUpdate }: Props) {
             <span className="module-identity-chip">{module.kind.replaceAll('_', ' ')}</span>
             <span className="module-identity-chip">{module.group_id || module.module_id}</span>
           </div>
+          {canEdit && (
           <div className="module-meta-controls">
             <label>
               Cabinet kind
@@ -353,6 +355,7 @@ export default function ModuleView({ id, model, files, onUpdate }: Props) {
               />
             </label>
           </div>
+          )}
         </div>
         <div className="header-actions">
           <button className="button secondary" onClick={exportGltf}>
@@ -363,9 +366,11 @@ export default function ModuleView({ id, model, files, onUpdate }: Props) {
               {['CSV', 'XLSX', 'SVG', 'DXF'][index]}
             </a>
           ))}
-          <button className="button primary" onClick={() => setEditing(true)}>
-            Edit
-          </button>
+          {canEdit && (
+            <button className="button primary" onClick={() => setEditing(true)}>
+              Edit
+            </button>
+          )}
         </div>
       </header>
       <div className="tab-bar module-tabs">
@@ -403,7 +408,7 @@ export default function ModuleView({ id, model, files, onUpdate }: Props) {
               onScene={setScene}
             />
           </div>
-          {(selectedCell || selectedModule) && (
+          {(selectedCell || selectedModule) && canEdit && (
             <section className="element-editor report-card">
               <header className="report-heading">
                 <h3>{selectedCell ? selectedCell.label || selectedCell.id : 'Module elements'}</h3>
@@ -598,21 +603,23 @@ export default function ModuleView({ id, model, files, onUpdate }: Props) {
         </>
       )}
       {tab === 'missing' && (
-        <section className="report-card">
+        <section className="report-card" inert={!canEdit}>
           <header className="report-heading">
             <div>
               <h2>Review</h2>
               <p>Resolve missing information and check uncertain values.</p>
             </div>
-            <button
-              className="button secondary"
-              onClick={() => void refine()}
-              disabled={model.refine_status === 'running' || refining}
-            >
-              <span>
-                {model.refine_status === 'running' || refining ? 'Refining…' : 'Ask the model again'}
-              </span>
-            </button>
+            {canEdit && (
+              <button
+                className="button secondary"
+                onClick={() => void refine()}
+                disabled={model.refine_status === 'running' || refining}
+              >
+                <span>
+                  {model.refine_status === 'running' || refining ? 'Refining…' : 'Ask the model again'}
+                </span>
+              </button>
+            )}
           </header>
           {(model.refine_status === 'running' || refining) && (
             <p className="notice">
@@ -1014,9 +1021,10 @@ export default function ModuleView({ id, model, files, onUpdate }: Props) {
           projectId={id}
           moduleId={module.module_id}
           onRestore={(restored) => onUpdate(restored)}
+          canRestore={canEdit}
         />
       )}
-      {editing && (
+      {editing && canEdit && (
         <ModuleEditor
           module={module}
           saveModule={saveModule}

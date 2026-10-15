@@ -9,12 +9,13 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 import yaml
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
+Role = Literal["viewer", "editor", "admin"]
 COOKIE_NAME = "fa_session"
 SESSION_SECONDS = 60 * 60 * 24 * 7
 ROOT = Path(__file__).resolve().parents[2]
@@ -148,7 +149,27 @@ async def auth_middleware(request: Request, call_next):
     request.state.username = username
     if enabled and request.url.path not in PUBLIC_API_PATHS and username is None:
         return JSONResponse(status_code=401, content={"detail": "Authentication required"})
+    if enabled and username and request.url.path not in PUBLIC_API_PATHS:
+        role = user_role(username)
+        if role not in ROLES:
+            return JSONResponse(status_code=403, content={"detail": "User role is invalid"})
+        request.state.role = role
+        if role == "viewer" and request.method not in {"GET", "HEAD"}:
+            return JSONResponse(status_code=403, content={"detail": "Viewer role is read-only"})
+        if role == "editor" and request.method == "PUT" and request.url.path == "/api/pricing":
+            return JSONResponse(status_code=403, content={"detail": "Editor role cannot change workspace pricing"})
+    else:
+        request.state.role = "admin" if not enabled else None
     return await call_next(request)
+
+
+def user_role(username: str | None) -> Role | None:
+    if username is None:
+        return None
+    return cast(Role, load_users().get(username, {}).get("role", "admin"))
+
+
+ROLES = frozenset({"viewer", "editor", "admin"})
 
 
 def _write_users(target: Path, data: dict[str, Any]) -> None:
@@ -163,7 +184,9 @@ def _write_users(target: Path, data: dict[str, Any]) -> None:
         raise
 
 
-def add_user(username: str, password: str, path: Path | None = None) -> None:
+def add_user(username: str, password: str, path: Path | None = None, role: str = "admin") -> None:
+    if role not in ROLES:
+        raise ValueError(f"Invalid role: {role}")
     target = path or users_path()
     data: Any = yaml.safe_load(target.read_text(encoding="utf-8")) if target.exists() else {}
     users = data.setdefault("users", {})
@@ -174,8 +197,21 @@ def add_user(username: str, password: str, path: Path | None = None) -> None:
     users[username] = {
         "salt": base64.urlsafe_b64encode(salt).decode(),
         "password_hash": base64.urlsafe_b64encode(digest).decode(),
+        "role": role,
     }
     target.parent.mkdir(parents=True, exist_ok=True)
+    _write_users(target, data)
+
+
+def set_user_role(username: str, role: str, path: Path | None = None) -> None:
+    if role not in ROLES:
+        raise ValueError(f"Invalid role: {role}")
+    target = path or users_path()
+    data: Any = yaml.safe_load(target.read_text(encoding="utf-8")) if target.exists() else {}
+    users = data.setdefault("users", {})
+    if username not in users:
+        raise ValueError(f"Unknown user: {username}")
+    users[username]["role"] = role
     _write_users(target, data)
 
 

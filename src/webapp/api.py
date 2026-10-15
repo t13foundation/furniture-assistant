@@ -36,11 +36,13 @@ from src.webapp.analysis import module_state, rebuild, recheck_project, refine_s
 from src.webapp.auth import (
     COOKIE_NAME,
     SESSION_SECONDS,
+    Role,
     auth_enabled,
     auth_middleware,
     create_session,
     login_retry_after,
     record_login_result,
+    user_role,
     verify_password,
 )
 from src.webapp.store import (
@@ -61,6 +63,7 @@ class StatusResponse(BaseModel):
 class AuthMeResponse(BaseModel):
     username: str | None
     auth_enabled: bool
+    role: Role | None
 
 
 class HealthResponse(BaseModel):
@@ -147,7 +150,8 @@ class LoginBody(BaseModel):
 
 @app.get("/api/auth/me", response_model=AuthMeResponse)
 def auth_me(request: Request) -> AuthMeResponse:
-    return AuthMeResponse(username=getattr(request.state, "username", None), auth_enabled=auth_enabled())
+    username = getattr(request.state, "username", None)
+    return AuthMeResponse(username=username, auth_enabled=auth_enabled(), role=user_role(username))
 
 
 @app.get("/api/health", response_model=HealthResponse)
@@ -177,7 +181,7 @@ def login(request: Request, body: LoginBody):
     record_login_result(ip, body.username, ok)
     if not ok:
         raise HTTPException(401, "Invalid username or password")
-    response = JSONResponse({"username": body.username})
+    response = JSONResponse({"username": body.username, "role": user_role(body.username)})
     # FA_COOKIE_SECURE=true once TLS terminates in front of the app: the browser then sends the session only over HTTPS.
     secure = os.environ.get("FA_COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
     response.set_cookie(

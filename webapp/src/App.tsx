@@ -40,12 +40,16 @@ export default function App() {
     event.preventDefault()
     setError('')
     try {
-      const result = await api<{ username: string }>('/api/auth/login', {
+      const result = await api<{ username: string; role: AuthState['role'] }>('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
       })
-      setAuth((current) => ({ auth_enabled: current?.auth_enabled ?? true, username: result.username }))
+      setAuth((current) => ({
+        auth_enabled: current?.auth_enabled ?? true,
+        username: result.username,
+        role: result.role,
+      }))
       setUnauthorized(false)
       setPassword('')
     } catch (e) {
@@ -54,7 +58,7 @@ export default function App() {
   }
   const logout = async () => {
     await api('/api/auth/logout', { method: 'POST' })
-    setAuth((current) => (current ? { ...current, username: null } : current))
+    setAuth((current) => (current ? { ...current, username: null, role: null } : current))
     setUnauthorized(true)
   }
   if (!auth) return <main className="auth-page">{error || 'Loading sign-in status…'}</main>

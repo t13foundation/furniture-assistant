@@ -6,18 +6,22 @@ All endpoints are JSON under `/api/`. The table below is generated from `webapp/
 
 ## Authentication
 
-Auth is enabled as soon as the users file (`FA_USERS_FILE`, default `config/users.yaml`) contains at least one user; while it is empty every endpoint is public. When enabled, every `/api/*` request except the four public paths requires the session cookie `fa_session` (set by login; `httponly`, `samesite=lax`, 7-day expiry, `secure` only when `FA_COOKIE_SECURE` is set — see [Operations](operations.md)). Missing or expired sessions get `401 {"detail": "Authentication required"}`. The middleware lives in `src/webapp/auth.py`.
+Auth is enabled as soon as the users file (`FA_USERS_FILE`, default `config/users.yaml`) contains at least one user; while it is empty every endpoint is public. When enabled, every `/api/*` request except the four public paths requires the session cookie `fa_session` (set by login; `httponly`, `samesite=lax`, 7-day expiry, `secure` only when `FA_COOKIE_SECURE` is set — see [Operations](operations.md)). Missing or expired sessions get `401 {"detail": "Authentication required"}`. The middleware in `src/webapp/auth.py` applies role permissions centrally.
+
+Users have one of three roles: `viewer` is read-only, `editor` may mutate project data but cannot change workspace pricing, and `admin` may perform all actions. Legacy entries with no `role` are treated as `admin`. There are no per-project ACLs, so all authenticated users can read every project.
 
 ## Auth and health (public)
 
 | Method | Path | Request | Response | Auth |
 |---|---|---|---|---|
-| POST | `/api/auth/login` | `LoginBody {username, password}` | `{username}` + `fa_session` cookie | public |
+| POST | `/api/auth/login` | `LoginBody {username, password}` | `{username, role}` + `fa_session` cookie | public |
 | POST | `/api/auth/logout` | — | `{status}`; deletes the cookie | public |
-| GET | `/api/auth/me` | — | `AuthMeResponse {username, auth_enabled}` | public |
+| GET | `/api/auth/me` | — | `AuthMeResponse {username, auth_enabled, role}` (`role` is `null` when signed out or auth is disabled) | public |
 | GET | `/api/health` | — | `HealthResponse {status: "ok"\|"degraded", model_base_url, projects_root_writable, auth_enabled}` | public |
 
 `/api/health` is for probes and reverse proxies: `degraded` when the projects root is not writable. Login failures are throttled per `(ip, username)`: 5 failures within 15 minutes lock that pair for 5 minutes (`429` with a `Retry-After` header).
+
+Mutations denied by the caller's role return `403 {"detail": ...}`. Viewers receive `403` for any non-public mutation; editors receive `403` for `PUT /api/pricing`. The remaining project APIs are available to editors.
 
 ## Projects
 
@@ -116,6 +120,7 @@ The upload is stored as `quote.xlsx` (original) and `quote.json` (parsed lines) 
 |---|---|
 | 400 | upload with no files or an unsupported extension; client quote that is not `.xlsx` |
 | 401 | missing/expired session on a non-public path; wrong credentials at login |
+| 403 | authenticated role cannot perform a mutation (viewer is read-only; editor cannot save workspace pricing) |
 | 404 | unknown project, module, version or page; no client quote uploaded yet |
 | 409 | `analyze` while an analysis or model re-run is in flight; `refine` while one is already running or the project is being analysed |
 | 413 | a file exceeds `FA_MAX_UPLOAD_MB`, or more than `FA_MAX_FILES` files in one project |

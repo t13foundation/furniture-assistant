@@ -2,12 +2,13 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { Link, NavLink, useLocation, useParams } from 'react-router-dom'
 import { api } from './api'
 import ModuleView from './ModuleView'
-import { useAuth } from './auth'
+import { isViewer, useAuth } from './auth'
 import type { ModuleModel, ProjectDetail, ProjectSummary } from './types'
 
 export function ProjectList() {
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const { auth, logout } = useAuth()
+  const viewer = isViewer(auth)
   const [error, setError] = useState('')
   const refresh = useCallback(
     () =>
@@ -36,9 +37,11 @@ export function ProjectList() {
           <Link to="/settings/pricing" className="button secondary">
             Pricing settings
           </Link>
-          <Link to="/new" className="button primary">
-            + New project
-          </Link>
+          {!viewer && (
+            <Link to="/new" className="button primary">
+              + New project
+            </Link>
+          )}
         </div>
       </header>
       <section className="projects-content">
@@ -48,9 +51,11 @@ export function ProjectList() {
             <h1>Projects</h1>
             <p>Your furniture drawings and analysis results.</p>
           </div>
-          <Link to="/new" className="button primary">
-            + New project
-          </Link>
+          {!viewer && (
+            <Link to="/new" className="button primary">
+              + New project
+            </Link>
+          )}
         </div>
         {error && <p className="error-message">{error}</p>}
         {projects.length ? (
@@ -75,9 +80,11 @@ export function ProjectList() {
             <div className="empty-icon">▧</div>
             <h2>No projects yet</h2>
             <p>Start by uploading your furniture drawings.</p>
-            <Link to="/new" className="button primary">
-              Create your first project
-            </Link>
+            {!viewer && (
+              <Link to="/new" className="button primary">
+                Create your first project
+              </Link>
+            )}
           </div>
         )}
       </section>
@@ -87,6 +94,8 @@ export function ProjectList() {
 
 export default function ProjectView() {
   const { id = '', moduleId } = useParams()
+  const { auth } = useAuth()
+  const viewer = isViewer(auth)
   const location = useLocation()
   const [detail, setDetail] = useState<ProjectDetail | null>(null)
   const [model, setModel] = useState<ModuleModel | null>(null)
@@ -184,7 +193,7 @@ export default function ProjectView() {
         {detail?.job?.status === 'error' && (
           <div className="error-banner">Analysis failed: {detail.job.error ?? 'unknown error'}</div>
         )}
-        {detail && (!detail.job || detail.job.status === 'error') && (
+        {detail && (!detail.job || detail.job.status === 'error') && !viewer && (
           <button className="button primary" onClick={() => void runAnalysis()}>
             Run analysis
           </button>
@@ -196,6 +205,7 @@ export default function ProjectView() {
             model={selectedModel}
             files={detail?.project.files ?? []}
             onUpdate={updateModel}
+            canEdit={!viewer}
           />
         ) : (
           <div className="empty-state">
@@ -353,9 +363,11 @@ export function ProjectSidebar({
           )
         })}
         {detail && detail.modules.length === 0 && <div className="sidebar-empty">No modules found yet.</div>}
-        <Link to="/new" className="sidebar-new">
-          + New project
-        </Link>
+        {!isViewer(auth) && (
+          <Link to="/new" className="sidebar-new">
+            + New project
+          </Link>
+        )}
         <footer className="sidebar-footer">
           {auth.username && <span>{auth.username}</span>}
           {auth.auth_enabled && (
@@ -373,6 +385,7 @@ export function ProjectSidebar({
 export function WorkspaceSidebar() {
   const [open, setOpen] = useState(false)
   const { auth, logout } = useAuth()
+  const viewer = isViewer(auth)
   return (
     <>
       <button
@@ -402,9 +415,11 @@ export function WorkspaceSidebar() {
         <NavLink className="project-nav-link" to="/settings/pricing">
           Pricing settings
         </NavLink>
-        <Link to="/new" className="sidebar-new">
-          + New project
-        </Link>
+        {!viewer && (
+          <Link to="/new" className="sidebar-new">
+            + New project
+          </Link>
+        )}
         <footer className="sidebar-footer">
           {auth.username && <span>{auth.username}</span>}
           {auth.auth_enabled && (

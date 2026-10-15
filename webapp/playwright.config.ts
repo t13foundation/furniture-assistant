@@ -3,6 +3,8 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+const USERS_FILE = join(tmpdir(), 'fa-e2e-users.yaml')
+
 // Browser tests against the real backend + built frontend, with a deterministic fake model (e2e/fake_llm.py).
 // Projects are written to a throw-away directory; run `npm run build` first (`make web-e2e` does both).
 const API_PORT = 8011
@@ -33,7 +35,8 @@ export default defineConfig({
         FA_ORCHESTRATOR_MODEL: 'fake',
         FA_TRACING_ENABLED: 'false',
         FA_OUTPUT_DIR: mkdtempSync(join(tmpdir(), 'fa-e2e-')),
-        FA_USERS_FILE: join(tmpdir(), 'fa-e2e-no-users.yaml'),
+        FA_USERS_FILE: USERS_FILE,
+        FA_SESSION_SECRET: 'fa-e2e-session-secret',
       },
     },
   ],
