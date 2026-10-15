@@ -1,0 +1,4892 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Furniture Assistant",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/projects/{project_id}/summary/materials": {
+      "get": {
+        "summary": "Get Material Summary",
+        "operationId": "get_material_summary_api_projects__project_id__summary_materials_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaterialSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/summary/processes": {
+      "get": {
+        "summary": "Get Process Summary",
+        "operationId": "get_process_summary_api_projects__project_id__summary_processes_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcessSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/valuation": {
+      "get": {
+        "summary": "Get Valuation",
+        "operationId": "get_valuation_api_projects__project_id__valuation_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Valuation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/export/valuation.xlsx": {
+      "get": {
+        "summary": "Export Valuation",
+        "operationId": "export_valuation_api_projects__project_id__export_valuation_xlsx_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/pricing": {
+      "get": {
+        "summary": "Get Project Pricing",
+        "operationId": "get_project_pricing_api_projects__project_id__pricing_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectPricing"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Put Project Pricing",
+        "operationId": "put_project_pricing_api_projects__project_id__pricing_put",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Pricing"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectPricing"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete Project Pricing",
+        "operationId": "delete_project_pricing_api_projects__project_id__pricing_delete",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectPricing"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/quote": {
+      "post": {
+        "summary": "Upload Quote",
+        "operationId": "upload_quote_api_projects__project_id__quote_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_quote_api_projects__project_id__quote_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuoteComparison"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Get Quote",
+        "operationId": "get_quote_api_projects__project_id__quote_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuoteComparison"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pricing": {
+      "get": {
+        "summary": "Get Pricing",
+        "operationId": "get_pricing_api_pricing_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pricing"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Put Pricing",
+        "operationId": "put_pricing_api_pricing_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Pricing"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pricing"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "summary": "Auth Me",
+        "operationId": "auth_me_api_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthMeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "summary": "Health",
+        "description": "Liveness/readiness for probes and proxies; public even when auth is enabled. Degraded when projects cannot be written.",
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "summary": "Login",
+        "operationId": "login_api_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "summary": "Logout",
+        "operationId": "logout_api_auth_logout_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects": {
+      "get": {
+        "summary": "List Projects",
+        "operationId": "list_projects_api_projects_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectListResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Projects Api Projects Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Project",
+        "operationId": "create_project_api_projects_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_project_api_projects_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Create Project Api Projects Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/analyze": {
+      "post": {
+        "summary": "Analyze",
+        "operationId": "analyze_api_projects__project_id__analyze_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}": {
+      "get": {
+        "summary": "Get Project",
+        "operationId": "get_project_api_projects__project_id__get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/activity": {
+      "get": {
+        "summary": "Project Activity",
+        "operationId": "project_activity_api_projects__project_id__activity_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ActivityEntry"
+                  },
+                  "title": "Response Project Activity Api Projects  Project Id  Activity Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/review": {
+      "get": {
+        "summary": "Project Review",
+        "operationId": "project_review_api_projects__project_id__review_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ReviewEntry"
+                  },
+                  "title": "Response Project Review Api Projects  Project Id  Review Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/pages/{file_index}/{page_index}.png": {
+      "get": {
+        "summary": "Page Image",
+        "operationId": "page_image_api_projects__project_id__pages__file_index___page_index__png_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "file_index",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "File Index"
+            }
+          },
+          {
+            "name": "page_index",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Page Index"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/modules/{module_id}": {
+      "get": {
+        "summary": "Get Module",
+        "operationId": "get_module_api_projects__project_id__modules__module_id__get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "module_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Module Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModuleModel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update Module",
+        "description": "Editor save: changes become overrides on the model's interpretation, then checks + rebuild.",
+        "operationId": "update_module_api_projects__project_id__modules__module_id__put",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "module_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Module Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FurnitureModule"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModuleModel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/modules/{module_id}/versions": {
+      "get": {
+        "summary": "Module Versions",
+        "operationId": "module_versions_api_projects__project_id__modules__module_id__versions_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "module_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Module Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModuleVersion"
+                  },
+                  "title": "Response Module Versions Api Projects  Project Id  Modules  Module Id  Versions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/modules/{module_id}/versions/{version}": {
+      "get": {
+        "summary": "Module Version",
+        "operationId": "module_version_api_projects__project_id__modules__module_id__versions__version__get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "module_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Module Id"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModuleModel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/modules/{module_id}/versions/{version}/restore": {
+      "post": {
+        "summary": "Restore Module Version",
+        "operationId": "restore_module_version_api_projects__project_id__modules__module_id__versions__version__restore_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "module_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Module Id"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModuleModel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/modules/{module_id}/answers": {
+      "post": {
+        "summary": "Answer Questions",
+        "description": "Apply the user's answers (overrides; one without values removes that target's override).",
+        "operationId": "answer_questions_api_projects__project_id__modules__module_id__answers_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "module_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Module Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswersBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModuleModel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/modules/{module_id}/refine": {
+      "post": {
+        "summary": "Refine",
+        "description": "Ask the model once more about the module's open questions (background; poll the module).",
+        "operationId": "refine_api_projects__project_id__modules__module_id__refine_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "module_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Module Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/modules/{module_id}/export/{fmt}": {
+      "get": {
+        "summary": "Export Module",
+        "operationId": "export_module_api_projects__project_id__modules__module_id__export__fmt__get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "module_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Module Id"
+            }
+          },
+          {
+            "name": "fmt",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Fmt"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/export/{fmt}": {
+      "get": {
+        "summary": "Export Project",
+        "operationId": "export_project_api_projects__project_id__export__fmt__get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "fmt",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Fmt"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ActivityEntry": {
+        "properties": {
+          "at": {
+            "type": "string",
+            "title": "At"
+          },
+          "user": {
+            "type": "string",
+            "title": "User"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "module_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Module Id"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "at",
+          "user",
+          "action",
+          "module_id",
+          "detail"
+        ],
+        "title": "ActivityEntry"
+      },
+      "AnswersBody": {
+        "properties": {
+          "overrides": {
+            "items": {
+              "$ref": "#/components/schemas/Override"
+            },
+            "type": "array",
+            "title": "Overrides"
+          }
+        },
+        "type": "object",
+        "required": [
+          "overrides"
+        ],
+        "title": "AnswersBody"
+      },
+      "AuthMeResponse": {
+        "properties": {
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "auth_enabled": {
+            "type": "boolean",
+            "title": "Auth Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "auth_enabled"
+        ],
+        "title": "AuthMeResponse"
+      },
+      "BoardPrice": {
+        "properties": {
+          "match": {
+            "type": "string",
+            "title": "Match",
+            "default": ""
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "laminated_board",
+                  "veneer",
+                  "lacquered_mdf",
+                  "hpl",
+                  "mirror",
+                  "glass",
+                  "stone",
+                  "upholstery",
+                  "metal",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "thickness_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thickness Mm"
+          },
+          "price_per_m2": {
+            "type": "number",
+            "title": "Price Per M2"
+          }
+        },
+        "type": "object",
+        "required": [
+          "match",
+          "kind",
+          "thickness_mm",
+          "price_per_m2"
+        ],
+        "title": "BoardPrice"
+      },
+      "BoardSummaryRow": {
+        "properties": {
+          "material": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material"
+          },
+          "thickness_mm": {
+            "type": "number",
+            "title": "Thickness Mm"
+          },
+          "parts": {
+            "type": "integer",
+            "title": "Parts"
+          },
+          "area_m2": {
+            "type": "number",
+            "title": "Area M2"
+          },
+          "sheets": {
+            "type": "integer",
+            "title": "Sheets"
+          },
+          "utilization": {
+            "type": "number",
+            "title": "Utilization"
+          },
+          "module_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Module Ids"
+          },
+          "unplaced": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unplaced"
+          }
+        },
+        "type": "object",
+        "required": [
+          "material",
+          "thickness_mm",
+          "parts",
+          "area_m2",
+          "sheets",
+          "utilization",
+          "module_ids",
+          "unplaced"
+        ],
+        "title": "BoardSummaryRow"
+      },
+      "Body_create_project_api_projects_post": {
+        "properties": {
+          "files": {
+            "items": {
+              "type": "string",
+              "contentMediaType": "application/octet-stream"
+            },
+            "type": "array",
+            "title": "Files"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "files"
+        ],
+        "title": "Body_create_project_api_projects_post"
+      },
+      "Body_upload_quote_api_projects__project_id__quote_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_quote_api_projects__project_id__quote_post"
+      },
+      "BoundingBox": {
+        "properties": {
+          "x_min": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "X Min"
+          },
+          "y_min": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Y Min"
+          },
+          "x_max": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "X Max"
+          },
+          "y_max": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Y Max"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "x_min",
+          "y_min",
+          "x_max",
+          "y_max",
+          "label"
+        ],
+        "title": "BoundingBox"
+      },
+      "Cell": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "col": {
+            "type": "integer",
+            "title": "Col"
+          },
+          "row": {
+            "type": "integer",
+            "title": "Row"
+          },
+          "front": {
+            "type": "string",
+            "enum": [
+              "door_left",
+              "door_right",
+              "door_double",
+              "drawer",
+              "open",
+              "niche_appliance",
+              "panel_fixed"
+            ],
+            "title": "Front"
+          },
+          "height_mm": {
+            "type": "number",
+            "title": "Height Mm"
+          },
+          "height_source": {
+            "type": "string",
+            "enum": [
+              "mark",
+              "model",
+              "user",
+              "derived",
+              "estimated",
+              "default",
+              "cross_view",
+              "missing"
+            ],
+            "title": "Height Source",
+            "default": "model"
+          },
+          "shelves": {
+            "type": "integer",
+            "title": "Shelves",
+            "default": 0
+          },
+          "material_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "default": ""
+          },
+          "source_mark_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Source Mark Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "col",
+          "row",
+          "front",
+          "height_mm",
+          "height_source",
+          "shelves",
+          "material_key",
+          "label",
+          "source_mark_ids"
+        ],
+        "title": "Cell"
+      },
+      "CellDraft": {
+        "properties": {
+          "col": {
+            "type": "integer",
+            "title": "Col"
+          },
+          "row": {
+            "type": "integer",
+            "title": "Row"
+          },
+          "front": {
+            "type": "string",
+            "enum": [
+              "door_left",
+              "door_right",
+              "door_double",
+              "drawer",
+              "open",
+              "niche_appliance",
+              "panel_fixed"
+            ],
+            "title": "Front"
+          },
+          "height_mark": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Mark"
+          },
+          "height_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Value"
+          },
+          "shelves": {
+            "type": "integer",
+            "title": "Shelves",
+            "default": 0
+          },
+          "material_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "col",
+          "row",
+          "front",
+          "height_mark",
+          "height_value",
+          "shelves",
+          "material_key",
+          "label"
+        ],
+        "title": "CellDraft"
+      },
+      "Column": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "width_mm": {
+            "type": "number",
+            "title": "Width Mm"
+          },
+          "width_source": {
+            "type": "string",
+            "enum": [
+              "mark",
+              "model",
+              "user",
+              "derived",
+              "estimated",
+              "default",
+              "cross_view",
+              "missing"
+            ],
+            "title": "Width Source",
+            "default": "model"
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/Cell"
+            },
+            "type": "array",
+            "title": "Cells"
+          },
+          "source_mark_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Source Mark Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "width_mm",
+          "width_source",
+          "cells",
+          "source_mark_ids"
+        ],
+        "title": "Column"
+      },
+      "ColumnDraft": {
+        "properties": {
+          "width_mark": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width Mark"
+          },
+          "width_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width Value"
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/CellDraft"
+            },
+            "type": "array",
+            "title": "Cells"
+          }
+        },
+        "type": "object",
+        "title": "ColumnDraft",
+        "required": [
+          "width_mark",
+          "width_value",
+          "cells"
+        ]
+      },
+      "ConfidenceLevel": {
+        "type": "string",
+        "enum": [
+          "HIGH",
+          "MEDIUM",
+          "LOW"
+        ],
+        "title": "ConfidenceLevel"
+      },
+      "DimensionChain": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "orientation": {
+            "type": "string",
+            "enum": [
+              "horizontal",
+              "vertical"
+            ],
+            "title": "Orientation"
+          },
+          "mark_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Mark Ids"
+          },
+          "sum_value": {
+            "type": "number",
+            "title": "Sum Value"
+          },
+          "overall_mark_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overall Mark Id"
+          },
+          "consistent": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consistent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "orientation",
+          "mark_ids",
+          "sum_value",
+          "overall_mark_id",
+          "consistent"
+        ],
+        "title": "DimensionChain"
+      },
+      "DimensionMark": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "value": {
+            "type": "number",
+            "title": "Value"
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "cm",
+              "mm"
+            ],
+            "title": "Unit"
+          },
+          "page_index": {
+            "type": "integer",
+            "title": "Page Index"
+          },
+          "bbox": {
+            "$ref": "#/components/schemas/BoundingBox"
+          },
+          "orientation": {
+            "type": "string",
+            "enum": [
+              "horizontal",
+              "vertical"
+            ],
+            "title": "Orientation"
+          },
+          "chain_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chain Id"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "pdf_text",
+              "vlm"
+            ],
+            "title": "Source",
+            "default": "pdf_text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "value",
+          "unit",
+          "page_index",
+          "bbox",
+          "orientation",
+          "chain_id",
+          "source"
+        ],
+        "title": "DimensionMark"
+      },
+      "DrawingType": {
+        "type": "string",
+        "enum": [
+          "ELEVATION",
+          "FLOOR_PLAN",
+          "WALL_PLAN",
+          "SECTION",
+          "CEILING_PLAN",
+          "ELECTRICAL",
+          "COST_SHEET",
+          "CAD",
+          "IMAGE",
+          "OTHER"
+        ],
+        "title": "DrawingType",
+        "description": "Type of document found in a furniture project package."
+      },
+      "EdgeBanding": {
+        "properties": {
+          "top": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top"
+          },
+          "right": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Right"
+          },
+          "bottom": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bottom"
+          },
+          "left": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Left"
+          }
+        },
+        "type": "object",
+        "title": "EdgeBanding",
+        "description": "Edge banding (okleina) specification per panel edge.",
+        "required": [
+          "top",
+          "right",
+          "bottom",
+          "left"
+        ]
+      },
+      "EdgeSummaryRow": {
+        "properties": {
+          "material": {
+            "type": "string",
+            "title": "Material"
+          },
+          "length_m": {
+            "type": "number",
+            "title": "Length M"
+          },
+          "module_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Module Ids"
+          },
+          "per_module": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Per Module"
+          }
+        },
+        "type": "object",
+        "required": [
+          "material",
+          "length_m",
+          "module_ids",
+          "per_module"
+        ],
+        "title": "EdgeSummaryRow"
+      },
+      "FurnitureModule": {
+        "properties": {
+          "module_id": {
+            "type": "string",
+            "title": "Module Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "file_name": {
+            "type": "string",
+            "title": "File Name"
+          },
+          "page_index": {
+            "type": "integer",
+            "title": "Page Index"
+          },
+          "view_bbox": {
+            "$ref": "#/components/schemas/BoundingBox"
+          },
+          "units": {
+            "type": "string",
+            "enum": [
+              "cm",
+              "mm"
+            ],
+            "title": "Units"
+          },
+          "width_mm": {
+            "type": "number",
+            "title": "Width Mm"
+          },
+          "height_mm": {
+            "type": "number",
+            "title": "Height Mm"
+          },
+          "depth_mm": {
+            "type": "number",
+            "title": "Depth Mm"
+          },
+          "depth_source": {
+            "type": "string",
+            "enum": [
+              "drawing",
+              "assumed"
+            ],
+            "title": "Depth Source"
+          },
+          "plinth_mm": {
+            "type": "number",
+            "title": "Plinth Mm"
+          },
+          "carcass_material_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Carcass Material Key"
+          },
+          "front_material_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Front Material Key"
+          },
+          "materials": {
+            "items": {
+              "$ref": "#/components/schemas/MaterialSpec"
+            },
+            "type": "array",
+            "title": "Materials"
+          },
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/Column"
+            },
+            "type": "array",
+            "title": "Columns"
+          },
+          "marks": {
+            "items": {
+              "$ref": "#/components/schemas/DimensionMark"
+            },
+            "type": "array",
+            "title": "Marks"
+          },
+          "chains": {
+            "items": {
+              "$ref": "#/components/schemas/DimensionChain"
+            },
+            "type": "array",
+            "title": "Chains"
+          },
+          "texts": {
+            "items": {
+              "$ref": "#/components/schemas/TextRun"
+            },
+            "type": "array",
+            "title": "Texts"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/Issue"
+            },
+            "type": "array",
+            "title": "Issues"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/Question"
+            },
+            "type": "array",
+            "title": "Questions"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "incomplete"
+            ],
+            "title": "Status",
+            "default": "ok"
+          },
+          "confidence": {
+            "$ref": "#/components/schemas/ConfidenceLevel",
+            "default": "MEDIUM"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          },
+          "source_mark_ids": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Source Mark Ids"
+          },
+          "dimension_sources": {
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "mark",
+                "model",
+                "user",
+                "derived",
+                "estimated",
+                "default",
+                "cross_view",
+                "missing"
+              ]
+            },
+            "type": "object",
+            "title": "Dimension Sources"
+          },
+          "views": {
+            "items": {
+              "$ref": "#/components/schemas/ModuleView"
+            },
+            "type": "array",
+            "title": "Views"
+          },
+          "view_checks": {
+            "items": {
+              "$ref": "#/components/schemas/ViewCheck"
+            },
+            "type": "array",
+            "title": "View Checks"
+          },
+          "model_uncertain": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Model Uncertain"
+          },
+          "confirmed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Confirmed"
+          },
+          "group_id": {
+            "type": "string",
+            "title": "Group Id",
+            "default": ""
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cabinet",
+              "wardrobe",
+              "kitchen",
+              "shelving",
+              "bench",
+              "reception_desk",
+              "wall_cladding",
+              "other"
+            ],
+            "title": "Kind",
+            "default": "cabinet"
+          },
+          "legend_materials": {
+            "items": {
+              "$ref": "#/components/schemas/MaterialSpec"
+            },
+            "type": "array",
+            "title": "Legend Materials"
+          }
+        },
+        "type": "object",
+        "required": [
+          "module_id",
+          "title",
+          "file_name",
+          "page_index",
+          "view_bbox",
+          "units",
+          "width_mm",
+          "height_mm",
+          "depth_mm",
+          "depth_source",
+          "plinth_mm",
+          "carcass_material_key",
+          "front_material_key",
+          "materials",
+          "columns",
+          "marks",
+          "chains",
+          "texts",
+          "issues",
+          "questions",
+          "status",
+          "confidence",
+          "notes",
+          "source_mark_ids",
+          "dimension_sources",
+          "views",
+          "view_checks",
+          "model_uncertain",
+          "confirmed",
+          "group_id",
+          "kind",
+          "legend_materials"
+        ],
+        "title": "FurnitureModule"
+      },
+      "GroupAmount": {
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "title": "Group Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "amount": {
+            "type": "number",
+            "title": "Amount"
+          },
+          "markup": {
+            "type": "number",
+            "title": "Markup"
+          },
+          "total_with_markup": {
+            "type": "number",
+            "title": "Total With Markup"
+          },
+          "module_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Module Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "group_id",
+          "title",
+          "amount",
+          "markup",
+          "total_with_markup",
+          "module_ids"
+        ],
+        "title": "GroupAmount"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError",
+        "required": [
+          "detail"
+        ]
+      },
+      "HardwareItem": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "hinge",
+              "runner",
+              "handle",
+              "push_open",
+              "shelf_support",
+              "hanging_rail",
+              "rail_holder",
+              "leg",
+              "connector",
+              "back_fixing",
+              "lighting",
+              "mounting",
+              "other"
+            ],
+            "title": "Category"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "spec": {
+            "type": "string",
+            "title": "Spec",
+            "default": ""
+          },
+          "qty": {
+            "type": "number",
+            "title": "Qty"
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "szt",
+              "kpl",
+              "mb"
+            ],
+            "title": "Unit",
+            "default": "szt"
+          },
+          "cell_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cell Ids"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "rule",
+              "drawing"
+            ],
+            "title": "Source",
+            "default": "rule"
+          },
+          "source_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "category",
+          "name",
+          "spec",
+          "qty",
+          "unit",
+          "cell_ids",
+          "source",
+          "source_text"
+        ],
+        "title": "HardwareItem",
+        "description": "A fitting (okucie) of the module, from construction rules or detected in the drawing text."
+      },
+      "HardwareSummaryRow": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "hinge",
+              "runner",
+              "handle",
+              "push_open",
+              "shelf_support",
+              "hanging_rail",
+              "rail_holder",
+              "leg",
+              "connector",
+              "back_fixing",
+              "lighting",
+              "mounting",
+              "other"
+            ],
+            "title": "Category"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "spec": {
+            "type": "string",
+            "title": "Spec"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          },
+          "qty": {
+            "type": "number",
+            "title": "Qty"
+          },
+          "module_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Module Ids"
+          },
+          "per_module": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Per Module"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category",
+          "name",
+          "spec",
+          "unit",
+          "qty",
+          "module_ids",
+          "per_module"
+        ],
+        "title": "HardwareSummaryRow"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded"
+            ],
+            "title": "Status"
+          },
+          "model_base_url": {
+            "type": "string",
+            "title": "Model Base Url"
+          },
+          "projects_root_writable": {
+            "type": "boolean",
+            "title": "Projects Root Writable"
+          },
+          "auth_enabled": {
+            "type": "boolean",
+            "title": "Auth Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "model_base_url",
+          "projects_root_writable",
+          "auth_enabled"
+        ],
+        "title": "HealthResponse"
+      },
+      "Issue": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "CHAIN_MISMATCH",
+              "COLUMNS_NOT_SUM",
+              "ROWS_NOT_SUM",
+              "DIMENSION_MISSING",
+              "DEPTH_ASSUMED",
+              "UNVERIFIED_DIMENSIONS",
+              "NICHE_NONSTANDARD",
+              "SHELF_SPAN",
+              "DOOR_TOO_WIDE",
+              "MATERIAL_UNKNOWN",
+              "VIEW_MISMATCH",
+              "DIMENSION_IMPLAUSIBLE"
+            ],
+            "title": "Code"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "error",
+              "warning"
+            ],
+            "title": "Severity"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "mark_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Mark Ids"
+          },
+          "cell_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cell Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "severity",
+          "message",
+          "mark_ids",
+          "cell_ids"
+        ],
+        "title": "Issue"
+      },
+      "Job": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "error"
+            ],
+            "title": "Status",
+            "default": "queued"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/JobItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "title": "Job",
+        "required": [
+          "status",
+          "started_at",
+          "finished_at",
+          "items",
+          "error"
+        ]
+      },
+      "JobItem": {
+        "properties": {
+          "file_index": {
+            "type": "integer",
+            "title": "File Index"
+          },
+          "page_index": {
+            "type": "integer",
+            "title": "Page Index"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "done",
+              "skipped",
+              "error"
+            ],
+            "title": "Status",
+            "default": "pending"
+          },
+          "module_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Module Ids"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_index",
+          "page_index",
+          "status",
+          "module_ids",
+          "error"
+        ],
+        "title": "JobItem"
+      },
+      "LoginBody": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "LoginBody"
+      },
+      "MaterialSpec": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "laminated_board",
+              "veneer",
+              "lacquered_mdf",
+              "hpl",
+              "mirror",
+              "glass",
+              "stone",
+              "upholstery",
+              "metal",
+              "other"
+            ],
+            "title": "Kind",
+            "default": "other"
+          },
+          "thickness_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thickness Mm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "name",
+          "kind",
+          "thickness_mm"
+        ],
+        "title": "MaterialSpec"
+      },
+      "MaterialSummary": {
+        "properties": {
+          "boards": {
+            "items": {
+              "$ref": "#/components/schemas/BoardSummaryRow"
+            },
+            "type": "array",
+            "title": "Boards"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/EdgeSummaryRow"
+            },
+            "type": "array",
+            "title": "Edges"
+          },
+          "hardware": {
+            "items": {
+              "$ref": "#/components/schemas/HardwareSummaryRow"
+            },
+            "type": "array",
+            "title": "Hardware"
+          },
+          "module_count": {
+            "type": "integer",
+            "title": "Module Count"
+          },
+          "incomplete_module_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Incomplete Module Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "boards",
+          "edges",
+          "hardware",
+          "module_count",
+          "incomplete_module_ids"
+        ],
+        "title": "MaterialSummary"
+      },
+      "ModuleAmount": {
+        "properties": {
+          "module_id": {
+            "type": "string",
+            "title": "Module Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "amount": {
+            "type": "number",
+            "title": "Amount"
+          },
+          "markup": {
+            "type": "number",
+            "title": "Markup"
+          },
+          "total_with_markup": {
+            "type": "number",
+            "title": "Total With Markup"
+          }
+        },
+        "type": "object",
+        "required": [
+          "module_id",
+          "title",
+          "amount",
+          "markup",
+          "total_with_markup"
+        ],
+        "title": "ModuleAmount"
+      },
+      "ModuleDraft": {
+        "properties": {
+          "module_id": {
+            "type": "string",
+            "title": "Module Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "view_bbox": {
+            "$ref": "#/components/schemas/BoundingBox"
+          },
+          "width_mark": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width Mark"
+          },
+          "width_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width Value"
+          },
+          "height_mark": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Mark"
+          },
+          "height_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Value"
+          },
+          "depth_mark": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depth Mark"
+          },
+          "depth_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depth Value"
+          },
+          "plinth_mark": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plinth Mark"
+          },
+          "plinth_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plinth Value"
+          },
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/ColumnDraft"
+            },
+            "type": "array",
+            "title": "Columns"
+          },
+          "views": {
+            "items": {
+              "$ref": "#/components/schemas/ModuleView"
+            },
+            "type": "array",
+            "title": "Views"
+          },
+          "carcass_material_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Carcass Material Key"
+          },
+          "front_material_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Front Material Key"
+          },
+          "materials": {
+            "items": {
+              "$ref": "#/components/schemas/MaterialSpec"
+            },
+            "type": "array",
+            "title": "Materials"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          },
+          "uncertain": {
+            "items": {
+              "$ref": "#/components/schemas/UncertainItem"
+            },
+            "type": "array",
+            "title": "Uncertain"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "cabinet",
+                  "wardrobe",
+                  "kitchen",
+                  "shelving",
+                  "bench",
+                  "reception_desk",
+                  "wall_cladding",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          }
+        },
+        "type": "object",
+        "required": [
+          "module_id",
+          "title",
+          "view_bbox",
+          "width_mark",
+          "width_value",
+          "height_mark",
+          "height_value",
+          "depth_mark",
+          "depth_value",
+          "plinth_mark",
+          "plinth_value",
+          "columns",
+          "views",
+          "carcass_material_key",
+          "front_material_key",
+          "materials",
+          "notes",
+          "uncertain",
+          "group_id",
+          "kind"
+        ],
+        "title": "ModuleDraft"
+      },
+      "ModuleListEntry": {
+        "properties": {
+          "module_id": {
+            "type": "string",
+            "title": "Module Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "file_name": {
+            "type": "string",
+            "title": "File Name"
+          },
+          "page_index": {
+            "type": "integer",
+            "title": "Page Index"
+          },
+          "group_id": {
+            "type": "string",
+            "title": "Group Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cabinet",
+              "wardrobe",
+              "kitchen",
+              "shelving",
+              "bench",
+              "reception_desk",
+              "wall_cladding",
+              "other"
+            ],
+            "title": "Kind"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "question_count": {
+            "type": "integer",
+            "title": "Question Count"
+          },
+          "attention_count": {
+            "type": "integer",
+            "title": "Attention Count"
+          },
+          "refine_status": {
+            "type": "string",
+            "title": "Refine Status"
+          },
+          "issue_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Issue Counts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "module_id",
+          "title",
+          "file_name",
+          "page_index",
+          "group_id",
+          "kind",
+          "status",
+          "question_count",
+          "attention_count",
+          "refine_status",
+          "issue_counts"
+        ],
+        "title": "ModuleListEntry"
+      },
+      "ModuleModel": {
+        "properties": {
+          "module": {
+            "$ref": "#/components/schemas/FurnitureModule"
+          },
+          "solids": {
+            "items": {
+              "$ref": "#/components/schemas/PanelSolid"
+            },
+            "type": "array",
+            "title": "Solids"
+          },
+          "cut_list": {
+            "items": {
+              "$ref": "#/components/schemas/Panel"
+            },
+            "type": "array",
+            "title": "Cut List"
+          },
+          "hardware": {
+            "items": {
+              "$ref": "#/components/schemas/HardwareItem"
+            },
+            "type": "array",
+            "title": "Hardware"
+          },
+          "processes": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessLine"
+            },
+            "type": "array",
+            "title": "Processes"
+          },
+          "draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModuleDraft"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "base_module": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FurnitureModule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "overrides": {
+            "items": {
+              "$ref": "#/components/schemas/Override"
+            },
+            "type": "array",
+            "title": "Overrides"
+          },
+          "refine_status": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "running",
+              "error"
+            ],
+            "title": "Refine Status",
+            "default": "idle"
+          },
+          "refine_attempts": {
+            "type": "integer",
+            "title": "Refine Attempts",
+            "default": 0
+          },
+          "refine_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refine Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "module",
+          "solids",
+          "cut_list",
+          "hardware",
+          "processes",
+          "draft",
+          "base_module",
+          "overrides",
+          "refine_status",
+          "refine_attempts",
+          "refine_error"
+        ],
+        "title": "ModuleModel",
+        "description": "A built module: interpretation, 3D solids, cut list, hardware, processes, and edit state.\n\n``module`` = resolve(``draft``) with ``overrides`` applied on top; without a draft, ``overrides``\napplied to ``base_module``. ``refine_*`` track the model re-run that fills open questions."
+      },
+      "ModuleVersion": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "at": {
+            "type": "string",
+            "title": "At"
+          },
+          "user": {
+            "type": "string",
+            "title": "User"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "at",
+          "user",
+          "action",
+          "summary"
+        ],
+        "title": "ModuleVersion"
+      },
+      "ModuleView": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "front_closed",
+              "front_open",
+              "interior",
+              "side",
+              "section",
+              "plan",
+              "detail"
+            ],
+            "title": "Kind"
+          },
+          "bbox": {
+            "$ref": "#/components/schemas/BoundingBox"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "bbox",
+          "label"
+        ],
+        "title": "ModuleView"
+      },
+      "Override": {
+        "properties": {
+          "target": {
+            "type": "string",
+            "title": "Target"
+          },
+          "value_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Mm"
+          },
+          "mark_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mark Id"
+          },
+          "material_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Key"
+          },
+          "material": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MaterialSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "front": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "door_left",
+                  "door_right",
+                  "door_double",
+                  "drawer",
+                  "open",
+                  "niche_appliance",
+                  "panel_fixed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Front"
+          },
+          "shelves": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shelves"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "cabinet",
+                  "wardrobe",
+                  "kitchen",
+                  "shelving",
+                  "bench",
+                  "reception_desk",
+                  "wall_cladding",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "target"
+        ],
+        "title": "Override",
+        "description": "A user-provided value applied on top of the model's interpretation.\n\nTargets: the Question ids plus ``cell:<cell_id>:front``, ``cell:<cell_id>:shelves`` and\n``cell:<cell_id>:material``. Dimensions take ``mark_id`` (value read from that mark) or\n``value_mm``; materials take an existing ``material_key`` or a new ``material`` legend entry."
+      },
+      "Panel": {
+        "properties": {
+          "part_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Part Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "length_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Length Mm"
+          },
+          "width_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width Mm"
+          },
+          "thickness_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thickness Mm"
+          },
+          "board_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Board Type"
+          },
+          "material_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Code"
+          },
+          "edge_banding": {
+            "$ref": "#/components/schemas/EdgeBanding"
+          },
+          "grain_direction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grain Direction"
+          },
+          "qty": {
+            "type": "integer",
+            "title": "Qty",
+            "default": 1
+          },
+          "holes_notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holes Notes"
+          },
+          "confidence": {
+            "$ref": "#/components/schemas/ConfidenceLevel",
+            "default": "MEDIUM"
+          },
+          "notes": {
+            "type": "string",
+            "title": "Notes",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "Panel",
+        "description": "A single furniture panel (element płyty) in a cutting list.\n\nMaps to one row in a CNC cutting optimization sheet.",
+        "required": [
+          "part_id",
+          "name",
+          "length_mm",
+          "width_mm",
+          "thickness_mm",
+          "board_type",
+          "material_code",
+          "edge_banding",
+          "grain_direction",
+          "qty",
+          "holes_notes",
+          "confidence",
+          "notes"
+        ]
+      },
+      "PanelSolid": {
+        "properties": {
+          "part_id": {
+            "type": "string",
+            "title": "Part Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "carcass",
+              "front",
+              "back",
+              "plinth",
+              "divider",
+              "shelf",
+              "drawer_box"
+            ],
+            "title": "Role"
+          },
+          "cell_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cell Id"
+          },
+          "material_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Key"
+          },
+          "position_mm": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Position Mm"
+          },
+          "size_mm": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Size Mm"
+          },
+          "length_mm": {
+            "type": "number",
+            "title": "Length Mm"
+          },
+          "width_mm": {
+            "type": "number",
+            "title": "Width Mm"
+          },
+          "thickness_mm": {
+            "type": "number",
+            "title": "Thickness Mm"
+          },
+          "edge_banding": {
+            "$ref": "#/components/schemas/EdgeBanding"
+          },
+          "grain_direction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grain Direction"
+          }
+        },
+        "type": "object",
+        "required": [
+          "part_id",
+          "name",
+          "role",
+          "cell_id",
+          "material_key",
+          "position_mm",
+          "size_mm",
+          "length_mm",
+          "width_mm",
+          "thickness_mm",
+          "edge_banding",
+          "grain_direction"
+        ],
+        "title": "PanelSolid"
+      },
+      "Pricing": {
+        "properties": {
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "title": "Currency",
+            "default": "PLN"
+          },
+          "boards": {
+            "items": {
+              "$ref": "#/components/schemas/BoardPrice"
+            },
+            "type": "array",
+            "title": "Boards"
+          },
+          "edge_banding_per_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edge Banding Per M"
+          },
+          "hardware": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "propertyNames": {
+              "enum": [
+                "hinge",
+                "runner",
+                "handle",
+                "push_open",
+                "shelf_support",
+                "hanging_rail",
+                "rail_holder",
+                "leg",
+                "connector",
+                "back_fixing",
+                "lighting",
+                "mounting",
+                "other"
+              ]
+            },
+            "type": "object",
+            "title": "Hardware"
+          },
+          "labour_rate_per_hour": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Labour Rate Per Hour"
+          },
+          "markup_percent": {
+            "type": "number",
+            "title": "Markup Percent",
+            "default": 0
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "title": "Pricing",
+        "required": [
+          "currency",
+          "boards",
+          "edge_banding_per_m",
+          "hardware",
+          "labour_rate_per_hour",
+          "markup_percent",
+          "updated_at"
+        ]
+      },
+      "ProcessCell": {
+        "properties": {
+          "qty": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qty"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "minutes": {
+            "type": "number",
+            "title": "Minutes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "qty",
+          "unit",
+          "minutes"
+        ],
+        "title": "ProcessCell"
+      },
+      "ProcessEntry": {
+        "properties": {
+          "process": {
+            "type": "string",
+            "enum": [
+              "cutting",
+              "edge_banding",
+              "drilling",
+              "assembly",
+              "hardware_mounting",
+              "installation"
+            ],
+            "title": "Process"
+          },
+          "operation": {
+            "type": "string",
+            "title": "Operation"
+          },
+          "qty": {
+            "type": "number",
+            "title": "Qty"
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "szt",
+              "mb",
+              "m2",
+              "kpl"
+            ],
+            "title": "Unit"
+          },
+          "minutes": {
+            "type": "number",
+            "title": "Minutes"
+          },
+          "material": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material"
+          },
+          "part_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Part Ids"
+          },
+          "module_id": {
+            "type": "string",
+            "title": "Module Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "process",
+          "operation",
+          "qty",
+          "unit",
+          "minutes",
+          "material",
+          "part_ids",
+          "module_id"
+        ],
+        "title": "ProcessEntry"
+      },
+      "ProcessLine": {
+        "properties": {
+          "process": {
+            "type": "string",
+            "enum": [
+              "cutting",
+              "edge_banding",
+              "drilling",
+              "assembly",
+              "hardware_mounting",
+              "installation"
+            ],
+            "title": "Process"
+          },
+          "operation": {
+            "type": "string",
+            "title": "Operation"
+          },
+          "qty": {
+            "type": "number",
+            "title": "Qty"
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "szt",
+              "mb",
+              "m2",
+              "kpl"
+            ],
+            "title": "Unit"
+          },
+          "minutes": {
+            "type": "number",
+            "title": "Minutes"
+          },
+          "material": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material"
+          },
+          "part_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Part Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "process",
+          "operation",
+          "qty",
+          "unit",
+          "minutes",
+          "material",
+          "part_ids"
+        ],
+        "title": "ProcessLine",
+        "description": "One production / mounting operation with its quantity and estimated time."
+      },
+      "ProcessMatrixRow": {
+        "properties": {
+          "module_id": {
+            "type": "string",
+            "title": "Module Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "file_name": {
+            "type": "string",
+            "title": "File Name"
+          },
+          "page_index": {
+            "type": "integer",
+            "title": "Page Index"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "processes": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ProcessCell"
+            },
+            "propertyNames": {
+              "enum": [
+                "cutting",
+                "edge_banding",
+                "drilling",
+                "assembly",
+                "hardware_mounting",
+                "installation"
+              ]
+            },
+            "type": "object",
+            "title": "Processes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "module_id",
+          "title",
+          "file_name",
+          "page_index",
+          "status",
+          "processes"
+        ],
+        "title": "ProcessMatrixRow"
+      },
+      "ProcessSummary": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessMatrixRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "totals": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessTotal"
+            },
+            "type": "array",
+            "title": "Totals"
+          },
+          "total_minutes": {
+            "type": "number",
+            "title": "Total Minutes"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessEntry"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rows",
+          "totals",
+          "total_minutes",
+          "lines"
+        ],
+        "title": "ProcessSummary"
+      },
+      "ProcessTotal": {
+        "properties": {
+          "process": {
+            "type": "string",
+            "enum": [
+              "cutting",
+              "edge_banding",
+              "drilling",
+              "assembly",
+              "hardware_mounting",
+              "installation"
+            ],
+            "title": "Process"
+          },
+          "lines": {
+            "type": "integer",
+            "title": "Lines"
+          },
+          "minutes": {
+            "type": "number",
+            "title": "Minutes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "process",
+          "lines",
+          "minutes"
+        ],
+        "title": "ProcessTotal"
+      },
+      "Project": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectFile"
+            },
+            "type": "array",
+            "title": "Files"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "created_at",
+          "files"
+        ],
+        "title": "Project"
+      },
+      "ProjectDetailResponse": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/Project"
+          },
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Job"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "modules": {
+            "items": {
+              "$ref": "#/components/schemas/ModuleListEntry"
+            },
+            "type": "array",
+            "title": "Modules"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project",
+          "job",
+          "modules"
+        ],
+        "title": "ProjectDetailResponse"
+      },
+      "ProjectFile": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "drawing_type": {
+            "$ref": "#/components/schemas/DrawingType"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "name",
+          "drawing_type"
+        ],
+        "title": "ProjectFile"
+      },
+      "ProjectListResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectFile"
+            },
+            "type": "array",
+            "title": "Files"
+          },
+          "job_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Status"
+          },
+          "module_count": {
+            "type": "integer",
+            "title": "Module Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "created_at",
+          "files",
+          "job_status",
+          "module_count"
+        ],
+        "title": "ProjectListResponse"
+      },
+      "ProjectPricing": {
+        "properties": {
+          "pricing": {
+            "$ref": "#/components/schemas/Pricing"
+          },
+          "inherited": {
+            "type": "boolean",
+            "title": "Inherited"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pricing",
+          "inherited"
+        ],
+        "title": "ProjectPricing"
+      },
+      "Question": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "dimension",
+              "material",
+              "front",
+              "shelves"
+            ],
+            "title": "Kind"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "missing",
+              "estimated",
+              "assumed",
+              "unknown_material",
+              "conflict",
+              "model_unsure",
+              "unverified"
+            ],
+            "title": "Reason"
+          },
+          "orientation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "horizontal",
+                  "vertical"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orientation"
+          },
+          "current_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Mm"
+          },
+          "current_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Value"
+          },
+          "cell_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cell Id"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note",
+            "default": ""
+          },
+          "candidate_mark_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Candidate Mark Ids"
+          },
+          "candidate_values": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Candidate Values"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "label",
+          "reason",
+          "orientation",
+          "current_mm",
+          "current_value",
+          "cell_id",
+          "note",
+          "candidate_mark_ids",
+          "candidate_values"
+        ],
+        "title": "Question",
+        "description": "Data the drawing did not provide; answered by the user (Override) or a model re-run.\n\n``id`` is the Override target it is answered with: ``width``, ``height``, ``depth``, ``plinth``,\n``col:<index>:width``, ``cell:<cell_id>:height``, ``material:carcass``, ``material:front``."
+      },
+      "QuoteComparison": {
+        "properties": {
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/QuoteLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "comparison": {
+            "items": {
+              "$ref": "#/components/schemas/QuoteMatch"
+            },
+            "type": "array",
+            "title": "Comparison"
+          },
+          "total_quote": {
+            "type": "number",
+            "title": "Total Quote"
+          },
+          "total_app": {
+            "type": "number",
+            "title": "Total App"
+          },
+          "suggested_markup_percent": {
+            "type": "number",
+            "title": "Suggested Markup Percent"
+          },
+          "suggestion_basis": {
+            "type": "string",
+            "title": "Suggestion Basis"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lines",
+          "comparison",
+          "total_quote",
+          "total_app",
+          "suggested_markup_percent",
+          "suggestion_basis"
+        ],
+        "title": "QuoteComparison"
+      },
+      "QuoteLine": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Codes"
+          },
+          "amount": {
+            "type": "number",
+            "title": "Amount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "codes",
+          "amount"
+        ],
+        "title": "QuoteLine"
+      },
+      "QuoteMatch": {
+        "properties": {
+          "codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Codes"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "quote_amount": {
+            "type": "number",
+            "title": "Quote Amount"
+          },
+          "app_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Amount"
+          },
+          "ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ratio"
+          },
+          "module_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Module Ids"
+          },
+          "complete": {
+            "type": "boolean",
+            "title": "Complete"
+          }
+        },
+        "type": "object",
+        "required": [
+          "codes",
+          "label",
+          "quote_amount",
+          "app_amount",
+          "ratio",
+          "module_ids",
+          "complete"
+        ],
+        "title": "QuoteMatch"
+      },
+      "ReviewEntry": {
+        "properties": {
+          "module_id": {
+            "type": "string",
+            "title": "Module Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "group_id": {
+            "type": "string",
+            "title": "Group Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cabinet",
+              "wardrobe",
+              "kitchen",
+              "shelving",
+              "bench",
+              "reception_desk",
+              "wall_cladding",
+              "other"
+            ],
+            "title": "Kind"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/Question"
+            },
+            "type": "array",
+            "title": "Questions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "module_id",
+          "title",
+          "group_id",
+          "kind",
+          "status",
+          "questions"
+        ],
+        "title": "ReviewEntry"
+      },
+      "StatusResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "StatusResponse"
+      },
+      "TextRun": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "bbox": {
+            "$ref": "#/components/schemas/BoundingBox"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text",
+          "bbox"
+        ],
+        "title": "TextRun",
+        "description": "A text object of the PDF page with its normalized position."
+      },
+      "UncertainItem": {
+        "properties": {
+          "field": {
+            "type": "string",
+            "enum": [
+              "width",
+              "height",
+              "depth",
+              "plinth",
+              "column_width",
+              "cell_height",
+              "cell_front",
+              "cell_shelves",
+              "carcass_material",
+              "front_material"
+            ],
+            "title": "Field"
+          },
+          "column": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Column"
+          },
+          "row": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "field",
+          "column",
+          "row",
+          "reason"
+        ],
+        "title": "UncertainItem",
+        "description": "A value of the draft the model flags as unsure (column/row are 1-based, left→right, top→bottom)."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type",
+          "input",
+          "ctx"
+        ],
+        "title": "ValidationError"
+      },
+      "Valuation": {
+        "properties": {
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/ValuationLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "totals": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Totals"
+          },
+          "unpriced": {
+            "type": "integer",
+            "title": "Unpriced"
+          },
+          "per_module": {
+            "items": {
+              "$ref": "#/components/schemas/ModuleAmount"
+            },
+            "type": "array",
+            "title": "Per Module"
+          },
+          "per_group": {
+            "items": {
+              "$ref": "#/components/schemas/GroupAmount"
+            },
+            "type": "array",
+            "title": "Per Group"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "currency",
+          "lines",
+          "totals",
+          "unpriced",
+          "per_module",
+          "per_group",
+          "notes"
+        ],
+        "title": "Valuation"
+      },
+      "ValuationLine": {
+        "properties": {
+          "group": {
+            "type": "string",
+            "enum": [
+              "boards",
+              "edges",
+              "hardware",
+              "processes"
+            ],
+            "title": "Group"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "qty": {
+            "type": "number",
+            "title": "Qty"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          },
+          "unit_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Price"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "module_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Module Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "group",
+          "name",
+          "qty",
+          "unit",
+          "unit_price",
+          "amount",
+          "module_ids"
+        ],
+        "title": "ValuationLine"
+      },
+      "ViewCheck": {
+        "properties": {
+          "dimension": {
+            "type": "string",
+            "title": "Dimension"
+          },
+          "expected_mm": {
+            "type": "number",
+            "title": "Expected Mm"
+          },
+          "where": {
+            "type": "string",
+            "title": "Where"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "view",
+              "drawing"
+            ],
+            "title": "Source"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "match",
+              "mismatch",
+              "absent"
+            ],
+            "title": "Status"
+          },
+          "found_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Found Mm"
+          },
+          "mark_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mark Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dimension",
+          "expected_mm",
+          "where",
+          "source",
+          "status",
+          "found_mm",
+          "mark_id"
+        ],
+        "title": "ViewCheck",
+        "description": "One dimension of the module compared against another view or another drawing of it."
+      }
+    }
+  }
+}
