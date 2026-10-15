@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import fcntl
 import json
+import threading
+from collections.abc import Generator
+from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path
 from typing import Annotated
@@ -14,6 +18,21 @@ from src.furniture.quote import QuoteComparison, QuoteLine, compare_quote, parse
 from src.furniture.reports import MaterialSummary, ProcessSummary, material_summary, process_summary
 from src.furniture.schema import ModuleModel
 from src.webapp.store import ProjectNotFoundError
+
+_PRICING_THREAD_LOCK = threading.RLock()
+
+
+@contextmanager
+def _workspace_pricing_lock() -> Generator[None]:
+    lock_path = _pricing_path().with_name(".pricing.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with _PRICING_THREAD_LOCK, lock_path.open("a") as stream:
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+
 
 router = APIRouter()
 
@@ -71,8 +90,10 @@ def get_valuation(request: Request, project_id: str) -> Valuation:
 @router.get("/api/projects/{project_id}/export/valuation.xlsx")
 def export_valuation(request: Request, project_id: str) -> FileResponse:
     models, valuation = _valuation(request, project_id)
-    output = request.app.state.store.exports_dir(project_id) / "valuation.xlsx"
-    write_valuation_xlsx(valuation, models, output)
+    store = request.app.state.store
+    with store.lock(project_id):
+        output = store.exports_dir(project_id) / "valuation.xlsx"
+        write_valuation_xlsx(valuation, models, output)
     return FileResponse(
         output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=output.name
     )
@@ -165,9 +186,11 @@ def get_quote(request: Request, project_id: str) -> QuoteComparison:
 
 @router.get("/api/pricing", response_model=Pricing)
 def get_pricing() -> Pricing:
-    return load_pricing(_pricing_path())
+    with _workspace_pricing_lock():
+        return load_pricing(_pricing_path())
 
 
 @router.put("/api/pricing", response_model=Pricing)
 def put_pricing(pricing: Pricing) -> Pricing:
-    return save_pricing(pricing, _pricing_path())
+    with _workspace_pricing_lock():
+        return save_pricing(pricing, _pricing_path())

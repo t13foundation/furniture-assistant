@@ -7,17 +7,19 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import AsyncGenerator, Callable
-from contextlib import asynccontextmanager
+import socket
+from collections.abc import AsyncGenerator, Callable, Coroutine
+from contextlib import asynccontextmanager, suppress
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from config.settings import AppConfig
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.furniture.export import write_cut_list_csv, write_cut_list_xlsx, write_panels_dxf, write_sheets_svg
 from src.furniture.resolve import (
@@ -46,6 +48,7 @@ from src.webapp.auth import (
 from src.webapp.store import (
     ActivityEntry,
     Job,
+    JobItem,
     ModuleVersion,
     Project,
     ProjectNotFoundError,
@@ -56,6 +59,14 @@ from src.webapp.store import (
 
 class StatusResponse(BaseModel):
     status: str
+
+
+class JobResponse(BaseModel):
+    status: Literal["queued", "running", "done", "error"] = "queued"
+    started_at: str | None = None
+    finished_at: str | None = None
+    items: list[JobItem] = Field(default_factory=list)
+    error: str | None = None
 
 
 class AuthMeResponse(BaseModel):
@@ -91,7 +102,7 @@ class ModuleListEntry(BaseModel):
 
 class ProjectDetailResponse(BaseModel):
     project: Project
-    job: Job | None
+    job: JobResponse | None
     modules: list[ModuleListEntry]
 
 
@@ -129,6 +140,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.rules = load_rules(REPO_ROOT / "config" / "furniture.yaml")
     app.state.store = ProjectStore(output_dir / "webapp" / "projects")
     app.state.tasks = {}
+    await _recover_jobs(app)
     yield
     for task in app.state.tasks.values():
         task.cancel()
@@ -203,6 +215,129 @@ def _store(request: Request) -> ProjectStore:
     return request.app.state.store
 
 
+JOB_STALE_AFTER = timedelta(seconds=30)
+JOB_HEARTBEAT_SECONDS = 5
+
+
+def _owner() -> str:
+    return f"{socket.gethostname()}:{os.getpid()}"
+
+
+def _job_fresh(job: Job | None) -> bool:
+    if job is None or job.status not in ("queued", "running") or not job.heartbeat_at:
+        return False
+    if job.owner:
+        host, separator, pid = job.owner.rpartition(":")
+        if separator and host == socket.gethostname():
+            try:
+                os.kill(int(pid), 0)
+            except ProcessLookupError:
+                return False
+            except (PermissionError, ValueError):
+                pass
+    try:
+        return datetime.now() - datetime.fromisoformat(job.heartbeat_at) < JOB_STALE_AFTER
+    except (TypeError, ValueError):
+        return False
+
+
+def _job_is_running(request: Request, project_id: str) -> bool:
+    store = _store(request)
+    with store.lock(project_id):
+        return _job_fresh(store.load_job(project_id))
+
+
+def _touch_job(store: ProjectStore, project_id: str, owner: str) -> None:
+    with store.lock(project_id):
+        job = store.load_job(project_id)
+        if job and job.owner == owner and job.status in ("queued", "running"):
+            job.heartbeat_at = now_iso()
+            store.save_job(project_id, job)
+
+
+async def _run_job_with_heartbeat(
+    app: FastAPI, project_id: str, runner: Callable[[], Coroutine[Any, Any, None]]
+) -> None:
+    store = app.state.store
+    job = store.load_job(project_id)
+    if not job or not job.owner:
+        return
+    owner = job.owner
+    task = asyncio.create_task(runner())
+    while not task.done():
+        done, _ = await asyncio.wait({task}, timeout=JOB_HEARTBEAT_SECONDS)
+        if not done:
+            _touch_job(store, project_id, owner)
+    try:
+        await task
+    except asyncio.CancelledError:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+        raise
+    except Exception as exc:
+        with store.lock(project_id):
+            current = store.load_job(project_id)
+            if current and current.owner == owner and current.status in ("queued", "running"):
+                current.status, current.error, current.finished_at = "error", f"{type(exc).__name__}: {exc}", now_iso()
+                store.save_job(project_id, current)
+        return
+    with store.lock(project_id):
+        current = store.load_job(project_id)
+        if current and current.owner == owner and current.status in ("queued", "running"):
+            current.status = "done"
+            current.finished_at = now_iso()
+            current.heartbeat_at = now_iso()
+            if current.kind == "refine" and current.refine_module_id:
+                module = store.load_module(project_id, current.refine_module_id)
+                if module.refine_status == "error":
+                    current.status, current.error = "error", module.refine_error
+            store.save_job(project_id, current)
+
+
+def _start_analysis(app: FastAPI, project_id: str) -> None:
+    store = app.state.store
+    app.state.tasks[project_id] = asyncio.create_task(
+        _run_job_with_heartbeat(
+            app,
+            project_id,
+            lambda: run_analysis(project_id, store, app.state.config, app.state.rules),
+        )
+    )
+
+
+async def _recover_jobs(app: FastAPI) -> None:
+    store = app.state.store
+    for project in store.list_projects():
+        with store.lock(project.id):
+            job = store.load_job(project.id)
+            if not job or job.status not in ("queued", "running") or _job_fresh(job):
+                continue
+            if job.kind == "refine":
+                job.status, job.error, job.finished_at = (
+                    "error",
+                    "Model re-run interrupted by server restart; start it again",
+                    now_iso(),
+                )
+                job.heartbeat_at = now_iso()
+                store.save_job(project.id, job)
+                if job.refine_module_id:
+                    try:
+                        module = store.load_module(project.id, job.refine_module_id)
+                    except KeyError:
+                        pass
+                    else:
+                        module.refine_status = "error"
+                        module.refine_error = job.error
+                        store.save_module(project.id, module, action="system")
+                store.append_audit(project.id, "refine_interrupted", "system", job.refine_module_id, job.error)
+                continue
+            job.status, job.owner, job.heartbeat_at = "queued", _owner(), now_iso()
+            store.save_job(project.id, job)
+            store.append_audit(project.id, "analyze_resume", "system")
+        _start_analysis(app, project.id)
+
+
 def _tasks(request: Request) -> dict[str, asyncio.Task]:
     return request.app.state.tasks
 
@@ -215,20 +350,14 @@ def _require_project(store: ProjectStore, project_id: str) -> None:
 
 
 def _running(request: Request, project_id: str) -> bool:
-    task = _tasks(request).get(project_id)
-    return task is not None and not task.done()
+    return _job_is_running(request, project_id)
 
 
 def _job(request: Request, project_id: str) -> Job | None:
-    """Job state; a queued/running job without a live task (server restarted) is reported as error."""
+    """Return the durable job record, including work owned by another worker."""
     store = _store(request)
     with store.lock(project_id):
-        job = store.load_job(project_id)
-        if job and job.status in ("queued", "running") and not _running(request, project_id):
-            job.status, job.error, job.finished_at = "error", "Analysis interrupted (server restarted)", now_iso()
-            store.save_job(project_id, job)
-            store.append_audit(project_id, "analyze_finish", "system", detail=f"Error: {job.error}")
-        return job
+        return store.load_job(project_id)
 
 
 @app.get("/api/projects", response_model=list[ProjectListResponse])
@@ -286,16 +415,16 @@ def _check_upload_limits(uploads: list[tuple[str, bytes]]) -> None:
 async def analyze(request: Request, project_id: str) -> StatusResponse:
     store = _store(request)
     _require_project(store, project_id)
-    if _running(request, project_id):
-        raise HTTPException(409, "Analysis already running")
-    if _refine_running(request, project_id):
-        raise HTTPException(409, "A model re-run is in progress; wait for it before re-analysing")
     with store.lock(project_id):
-        store.save_job(project_id, Job(status="queued"))
+        current = store.load_job(project_id)
+        if current is not None and _job_fresh(current):
+            raise HTTPException(
+                409, "Analysis already running" if current.kind == "analysis" else "A model re-run is in progress"
+            )
+        job = Job(status="queued", owner=_owner(), heartbeat_at=now_iso())
+        store.save_job(project_id, job)
         store.append_audit(project_id, "analyze_start", request.state.username)
-    _tasks(request)[project_id] = asyncio.create_task(
-        run_analysis(project_id, store, request.app.state.config, request.app.state.rules)
-    )
+        _start_analysis(request.app, project_id)
     return StatusResponse(status="queued")
 
 
@@ -323,7 +452,11 @@ def get_project(request: Request, project_id: str) -> ProjectDetailResponse:
         )
         for m in store.list_modules(project_id)
     ]
-    return ProjectDetailResponse(project=store.load_project(project_id), job=job, modules=modules)
+    return ProjectDetailResponse(
+        project=store.load_project(project_id),
+        job=JobResponse(**job.model_dump()) if job else None,
+        modules=modules,
+    )
 
 
 @app.get("/api/projects/{project_id}/activity")
@@ -367,12 +500,15 @@ async def page_image(request: Request, project_id: str, file_index: int, page_in
 
 
 def _refine_running(request: Request, project_id: str, module_id: str | None = None) -> bool:
-    """A model re-run is in flight for the module (or any module of the project)."""
-    prefix = f"{project_id}/"
-    return any(
-        not task.done() and key.startswith(prefix) and (module_id is None or key == prefix + module_id)
-        for key, task in _tasks(request).items()
-    )
+    store = _store(request)
+    with store.lock(project_id):
+        job = store.load_job(project_id)
+        return bool(
+            job is not None
+            and _job_fresh(job)
+            and job.kind == "refine"
+            and (module_id is None or job.refine_module_id == module_id)
+        )
 
 
 @app.get("/api/projects/{project_id}/modules/{module_id}")
@@ -529,26 +665,46 @@ def answer_questions(request: Request, project_id: str, module_id: str, body: An
 @app.post("/api/projects/{project_id}/modules/{module_id}/refine", status_code=202)
 async def refine(request: Request, project_id: str, module_id: str) -> StatusResponse:
     """Ask the model once more about the module's open questions (background; poll the module)."""
-    current = get_module(request, project_id, module_id)
-    if _refine_running(request, project_id, module_id):
-        raise HTTPException(409, "Model re-run already running")
-    if _running(request, project_id):
-        raise HTTPException(409, "Analysis is running for this project")
-    if current.draft is None:
-        raise HTTPException(422, "Module was created by hand; there is no model interpretation to refine")
     store = _store(request)
+    _require_project(store, project_id)
     with store.lock(project_id):
-        latest = store.load_module(project_id, module_id)
+        active = store.load_job(project_id)
+        if _job_fresh(active):
+            raise HTTPException(409, "Analysis or model re-run already running")
+        try:
+            latest = store.load_module(project_id, module_id)
+        except KeyError:
+            raise HTTPException(404, f"Unknown module {module_id}") from None
+        if latest.draft is None:
+            raise HTTPException(422, "Module was created by hand; there is no model interpretation to refine")
+        owner = _owner()
         store.save_module(
             project_id,
             latest.model_copy(update={"refine_status": "running", "refine_error": None}),
             user=getattr(request.state, "username", None) or "system",
             action="refine",
         )
+        store.save_job(
+            project_id,
+            Job(
+                status="running",
+                kind="refine",
+                refine_module_id=module_id,
+                owner=owner,
+                heartbeat_at=now_iso(),
+                started_at=now_iso(),
+            ),
+        )
         store.append_audit(project_id, "refine_start", getattr(request.state, "username", None), module_id)
-    _tasks(request)[f"{project_id}/{module_id}"] = asyncio.create_task(
-        refine_stored_module(store, project_id, module_id, request.app.state.config, request.app.state.rules)
-    )
+        _tasks(request)[project_id] = asyncio.create_task(
+            _run_job_with_heartbeat(
+                request.app,
+                project_id,
+                lambda: refine_stored_module(
+                    store, project_id, module_id, request.app.state.config, request.app.state.rules
+                ),
+            )
+        )
     return StatusResponse(status="running")
 
 
@@ -556,8 +712,10 @@ def _export(request: Request, project_id: str, models: list[ModuleModel], stem: 
     if fmt not in EXPORTS:
         raise HTTPException(404, f"Unknown export format {fmt}")
     media_type, writer = EXPORTS[fmt]
-    path = _store(request).exports_dir(project_id) / f"{stem}.{fmt}"
-    writer(models, request.app.state.rules, path)
+    store = _store(request)
+    with store.lock(project_id):
+        path = store.exports_dir(project_id) / f"{stem}.{fmt}"
+        writer(models, request.app.state.rules, path)
     return FileResponse(path, media_type=media_type, filename=path.name)
 
 

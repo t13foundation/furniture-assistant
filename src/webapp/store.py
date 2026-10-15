@@ -12,12 +12,14 @@ Layout under ``<output.dir>/webapp/projects/<project_id>/``::
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import secrets
 import tempfile
 import threading
 import time
+from contextlib import AbstractContextManager
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -57,6 +59,10 @@ class Job(BaseModel):
     finished_at: str | None = None
     items: list[JobItem] = Field(default_factory=list)
     error: str | None = None
+    kind: Literal["analysis", "refine"] = "analysis"
+    refine_module_id: str | None = None
+    owner: str | None = None
+    heartbeat_at: str | None = None
 
 
 class ModuleVersion(BaseModel):
@@ -103,16 +109,55 @@ def _unique_name(name: str, taken: set[str]) -> str:
     return candidate
 
 
+class ProjectLock(AbstractContextManager["ProjectLock"]):
+    def __init__(self, directory: Path) -> None:
+        self.directory = directory
+        self.thread_lock = threading.RLock()
+        self.local = threading.local()
+
+    def __enter__(self) -> ProjectLock:
+        self.thread_lock.acquire()
+        depth = getattr(self.local, "depth", 0)
+        if depth == 0:
+            stream = None
+            try:
+                stream = (self.directory / ".lock").open("a")
+                fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+            except BaseException:
+                if stream is not None:
+                    stream.close()
+                self.thread_lock.release()
+                raise
+            self.local.stream = stream
+        self.local.depth = depth + 1
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        depth = self.local.depth - 1
+        self.local.depth = depth
+        try:
+            if depth == 0:
+                stream = self.local.stream
+                del self.local.stream
+                try:
+                    fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+                finally:
+                    stream.close()
+        finally:
+            self.thread_lock.release()
+
+
 class ProjectStore:
     def __init__(self, root: Path) -> None:
         self.root = root
-        self._locks: dict[str, threading.RLock] = {}
+        self._locks: dict[str, ProjectLock] = {}
         self._locks_guard = threading.Lock()
 
-    def lock(self, project_id: str) -> threading.RLock:
-        """Serializes read-modify-write of a project's modules (API threads, analysis and refine jobs)."""
+    def lock(self, project_id: str) -> ProjectLock:
+        """Serialize project access within threads and across processes on a shared filesystem."""
+        project_id = Path(project_id).name
         with self._locks_guard:
-            return self._locks.setdefault(Path(project_id).name, threading.RLock())
+            return self._locks.setdefault(project_id, ProjectLock(self.root / project_id))
 
     def project_dir(self, project_id: str) -> Path:
         path = self.root / Path(project_id).name
@@ -297,6 +342,9 @@ class ProjectStore:
     # ── Job ───────────────────────────────────────────────────────────
 
     def save_job(self, project_id: str, job: Job) -> None:
+        existing = self.load_job(project_id)
+        if existing and existing.owner == job.owner and existing.heartbeat_at:
+            job.heartbeat_at = existing.heartbeat_at
         _write_atomic(self.project_dir(project_id) / "job.json", job.model_dump_json(indent=2))
 
     def load_job(self, project_id: str) -> Job | None:

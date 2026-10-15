@@ -6,17 +6,17 @@ Review of the Furniture Assistant web app against real-deployment requirements, 
 
 | Priority | Findings | Done | Partly done | Open |
 |---|---|---|---|---|
-| P0 — blocks real deployment | 6 | 1 | 2 | 3 |
+| P0 — blocks real deployment | 6 | 3 | 2 | 1 |
 | P1 — needed before customer-facing use | 10 | 1 | 0 | 9 |
 | P2 — quality and robustness | 7 | 0 | 0 | 7 |
 
 Top 5 open items, in order of risk:
 
-1. **Single-process state (P0).** Locks and job tracking live in process memory; a second uvicorn worker or replica corrupts projects and loses jobs. Exactly one worker must run until state moves to a queue/DB.
-2. **Jobs do not survive a restart (P0).** An interrupted analysis is reported as an error and the user must click "Run analysis" again.
-3. **No model-server readiness check on `analyze` (P0, remainder).** The health endpoint exists, but a job is still accepted when the model server is down and fails on its first page instead of getting a 503.
-4. **`OPENAI_API_KEY` read from `.env` in the repo directory (P0).** No secret manager; anyone with repo-dir access can read the key.
-5. **No authorization model (P1).** Every logged-in user sees every project; there are no roles.
+1. **No model-server readiness check on `analyze` (P0, remainder).** The health endpoint exists, but a job is still accepted when the model server is down and fails on its first page instead of getting a 503.
+2. **`OPENAI_API_KEY` read from `.env` in the repo directory (P0).** No secret manager; anyone with repo-dir access can read the key.
+3. **No authorization model (P1).** Every logged-in user sees every project; there are no roles.
+4. **No tamper-evident audit trail (P1).** Per-project audit and version files are editable.
+5. **No backup/retention automation (P1).** State needs an operator-managed backup and cleanup plan.
 
 Done in this release (the review's "do now" list, each covered by tests in `tests/test_webapp_improvements.py`):
 
@@ -32,12 +32,12 @@ Explicitly **not** implemented from the same list: the `analyze` 503 probe of th
 
 | Area | Finding | Evidence | Fix | Effort | Status |
 |---|---|---|---|---|---|
-| Concurrency | All mutable state is in-process: per-project locks and the analysis/refine task registry. More than one uvicorn worker (or two replicas behind a proxy) corrupts projects and loses job tracking. | `src/webapp/store.py:109-115` (`self._locks: dict[str, threading.RLock]`), `src/webapp/api.py:131` (`app.state.tasks = {}`), `src/webapp/api.py:296` (`asyncio.create_task`) | Run exactly one uvicorn worker (see [Operations](operations.md)); later move jobs to a queue (arq/RQ + Redis) and locks to file locks (`fcntl`) or a DB. | L | Open |
+| Concurrency | Per-project locks and job tracking used to be process-local, preventing multiple API workers from safely sharing files. | `src/webapp/store.py` (`ProjectLock`: reentrant `threading.RLock` plus exclusive `fcntl.flock` on `<project>/.lock`); `src/webapp/api.py` (durable job ownership and heartbeat) | Done for multiple workers on one host and for multiple hosts using a shared filesystem with reliable `flock`; separate local disks or filesystems without working `flock` remain unsupported. | M | Done |
 | Session security | The `fa_session` cookie was set without `secure`, so the session could be replayed over plain HTTP once the app is exposed. | `src/webapp/api.py:181-191` (`set_cookie(..., httponly=True, samesite="lax", secure=secure)`), `src/webapp/auth.py:18` (`COOKIE_NAME = "fa_session"`) | Done: `secure` comes from `FA_COOKIE_SECURE` (default `false`). Note: the auto-detection from a public URL proposed in the review was **not** implemented — set the flag explicitly once TLS terminates in front of the app. | S | Done |
 | Upload limits | `create_project` previously accepted any number of any-size files (suffix check only); a 2 GB PDF or 500 files were rendered page-by-page into `pages/`. | `src/webapp/api.py:256-261` (suffix check, then `await f.read()` for every file, then `_check_upload_limits`), `src/webapp/api.py:274-282` (`FA_MAX_FILES` 50, `FA_MAX_UPLOAD_MB` 50 → 413) | Done: per-file and per-count limits with 413. Remaining: the size is checked **after** `await file.read()`, so an oversized request is still fully buffered in memory before rejection, and the planned per-request total cap (~200 MB) was not implemented — check `UploadFile.size` / stream, add a request-total limit. | M | Partly done |
 | Secrets | `OPENAI_API_KEY` is loaded from a `.env` file inside the repo directory at startup; there is no secret manager, so anyone with repo-dir access reads the key. | `src/webapp/api.py:123` (`load_dotenv(REPO_ROOT / ".env")`) | Document env-only in production, never `.env` (see [Operations](operations.md)); move to a real secret manager before multi-host deployment. | S | Open |
 | Health / readiness | No health endpoint existed (now added), and there is still no readiness check of the model server before accepting `analyze`: the job is queued and only fails on its first page when the server is down or the model is not loaded. | `src/webapp/api.py:153-167` (health, public via `src/webapp/auth.py:140`), `src/webapp/api.py:285-299` (analyze queues without probing), `src/webapp/analysis.py:244-247` (first-page abort when the model never answers) | Done: `GET /api/health` → status/model URL/projects-root writability/auth. Remaining: `analyze` returns 503 with the model error when a short `GET {base_url}/models` fails. | S | Partly done |
-| Job durability | Jobs do not survive a restart: a `queued`/`running` job without a live task is rewritten to `error` ("Analysis interrupted (server restarted)"); the user must run the analysis again. Same for an interrupted module re-run. | `src/webapp/api.py:222-231` (`_job`), `src/webapp/api.py:386-393` (lost refine) | Persist job intent and resume on startup. | M | Open |
+| Job durability | Analysis/refine jobs previously lived only in local `asyncio.Task` state and were lost on restart. | `src/webapp/store.py` (`Job.owner`, `heartbeat_at`, `kind`, `refine_module_id` in `job.json`); `src/webapp/api.py` (`_recover_jobs`, `_run_job_with_heartbeat`); `src/webapp/analysis.py` (restart clears modules and reruns analysis) | Done: startup claims stale analysis jobs under the project lock and resumes from a clean module set; interrupted refine jobs become explicit errors and must be started again. | M | Done |
 
 ## P1 — needed before customer-facing use
 

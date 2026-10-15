@@ -201,10 +201,13 @@ async def refine_stored_module(
 
 
 async def run_analysis(project_id: str, store: ProjectStore, config: AppConfig, rules: ConstructionRules) -> None:
-    job = Job(status="running", started_at=now_iso())
+    job = store.load_job(project_id) or Job(status="queued")
+    job.status, job.started_at, job.finished_at, job.error = "running", job.started_at or now_iso(), None, None
     with store.lock(project_id):
         store.save_job(project_id, job)
     try:
+        # The interrupted page can have partially written modules without a complete per-page checkpoint.
+        # Restart from a clean module set to avoid duplicate or incomplete output.
         with store.lock(project_id):
             store.clear_modules(project_id)
         job.items = plan_items(store, project_id)
@@ -263,6 +266,7 @@ async def run_analysis(project_id: str, store: ProjectStore, config: AppConfig, 
         except _RunAbortedError as exc:
             logger.error("Analysis of %s aborted: %s", project_id, exc)
             item.status, item.error = "error", str(exc)
+            job.status, job.error, job.finished_at = "error", str(exc), now_iso()
             with store.lock(project_id):
                 store.save_job(project_id, job)
                 store.append_audit(project_id, "analyze_finish", "system", detail=f"Error: {exc}")
