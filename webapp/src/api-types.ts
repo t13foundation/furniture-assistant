@@ -267,6 +267,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/audit.jsonl": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Audit */
+        get: operations["download_audit_api_projects__project_id__audit_jsonl_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/review": {
         parameters: {
             query?: never;
@@ -463,6 +480,15 @@ export interface components {
             module_id: string | null;
             /** Detail */
             detail: string | null;
+        };
+        /** ActivityResponse */
+        ActivityResponse: {
+            /** Entries */
+            entries: components["schemas"]["ActivityEntry"][];
+            /** Chain Valid */
+            chain_valid: boolean;
+            /** Chain Error */
+            chain_error: string | null;
         };
         /** AnswersBody */
         AnswersBody: {
@@ -2194,7 +2220,38 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ActivityEntry"][];
+                    "application/json": components["schemas"]["ActivityResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_audit_api_projects__project_id__audit_jsonl_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

@@ -672,12 +672,45 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ActivityEntry"
-                  },
-                  "title": "Response Project Activity Api Projects  Project Id  Activity Get"
+                  "$ref": "#/components/schemas/ActivityResponse"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/audit.jsonl": {
+      "get": {
+        "summary": "Download Audit",
+        "operationId": "download_audit_api_projects__project_id__audit_jsonl_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -1321,6 +1354,39 @@
           "detail"
         ],
         "title": "ActivityEntry"
+      },
+      "ActivityResponse": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ActivityEntry"
+            },
+            "type": "array",
+            "title": "Entries"
+          },
+          "chain_valid": {
+            "type": "boolean",
+            "title": "Chain Valid"
+          },
+          "chain_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chain Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entries",
+          "chain_valid",
+          "chain_error"
+        ],
+        "title": "ActivityResponse"
       },
       "AnswersBody": {
         "properties": {

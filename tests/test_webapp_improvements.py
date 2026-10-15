@@ -101,10 +101,22 @@ def test_audit_history_restore_and_review(client, two_door_module):
     restored = client.post(f"{url}/versions/1/restore")
     assert restored.status_code == 200
     assert restored.json()["module"]["title"] == original["title"]
-    activity = client.get(f"/api/projects/{project_id}/activity").json()
+    activity_response = client.get(f"/api/projects/{project_id}/activity").json()
+    activity = activity_response["entries"]
+    assert activity_response["chain_valid"] is True
+    assert activity_response["chain_error"] is None
     assert activity[0]["action"] == "restore"
     assert {entry["action"] for entry in activity} >= {"create_project", "editor_save", "restore"}
+    exported = client.get(f"/api/projects/{project_id}/audit.jsonl")
+    assert exported.status_code == 200
+    assert exported.headers["content-type"].startswith("application/x-ndjson")
     review = client.get(f"/api/projects/{project_id}/review").json()
+    audit_lines = exported.text.splitlines()
+    audit_lines[-1] = audit_lines[-1].replace("restore", "tampered")
+    (api.app.state.store.project_dir(project_id) / "audit.jsonl").write_text("\n".join(audit_lines) + "\n")
+    activity_response = client.get(f"/api/projects/{project_id}/activity").json()
+    assert activity_response["chain_valid"] is False
+    assert activity_response["chain_error"] == f"line {len(audit_lines)}: hash mismatch"
     assert review[0]["group_id"] == two_door_module.group_id
     assert review[0]["kind"] == two_door_module.kind
 
@@ -266,3 +278,47 @@ def test_valuation_per_cabinet_reconciles_with_the_marked_up_total(client, two_d
     assert sum(row.total_with_markup for row in valuation.per_module) == pytest.approx(
         valuation.totals["total_with_markup"], abs=0.02
     )
+
+
+def test_audit_chain_detects_tampering_removal_and_reordering(client):
+    from src.webapp.audit import verify_audit
+
+    project_id = _create(client)
+    store = api.app.state.store
+    for action in ("first", "second", "third"):
+        store.append_audit(project_id, action, "operator")
+    path = store.project_dir(project_id) / "audit.jsonl"
+    original = path.read_bytes()
+    assert verify_audit(path) == (True, None)
+
+    lines = original.splitlines(keepends=True)
+    changed = lines.copy()
+    changed[2] = changed[2].replace(b'"second"', b'"changed"')
+    path.write_bytes(b"".join(changed))
+    assert verify_audit(path) == (False, "line 3: hash mismatch")
+
+    path.write_bytes(lines[0] + lines[2] + lines[3])
+    assert verify_audit(path) == (False, "line 2: prev_hash mismatch")
+
+    path.write_bytes(b"".join(reversed(lines)))
+    assert verify_audit(path) == (False, "line 1: prev_hash mismatch")
+
+
+def test_audit_chain_accepts_legacy_prefix_and_cli_verify(tmp_path, monkeypatch, capsys):
+    import sys
+
+    from src.webapp.audit import main, verify_audit
+    from src.webapp.store import ProjectStore
+
+    store = ProjectStore(tmp_path)
+    project = store.create_project("Audit test", [("cabinet.png", b"png")])
+    audit_path = store.project_dir(project.id) / "audit.jsonl"
+    legacy = b'{"at":"2026-01-01T00:00:00","user":"system","action":"legacy","module_id":null,"detail":null}\n'
+    audit_path.write_bytes(legacy)
+    assert verify_audit(audit_path) == (True, None)
+    store.append_audit(project.id, "after_legacy", "operator")
+    assert verify_audit(audit_path) == (True, None)
+
+    monkeypatch.setattr(sys, "argv", ["audit", "verify", str(store.project_dir(project.id))])
+    assert main() == 0
+    assert "valid" in capsys.readouterr().out

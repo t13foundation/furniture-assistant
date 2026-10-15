@@ -33,6 +33,7 @@ from src.furniture.schema import CabinetKind, FurnitureModule, ModuleModel, Over
 from src.pipeline.orchestrator import DRAWING_EXTENSIONS
 from src.webapp import reports
 from src.webapp.analysis import module_state, rebuild, recheck_project, refine_stored_module, run_analysis
+from src.webapp.audit import verify_audit
 from src.webapp.auth import (
     COOKIE_NAME,
     SESSION_SECONDS,
@@ -102,6 +103,12 @@ class ReviewEntry(BaseModel):
     kind: CabinetKind
     status: str
     questions: list[Question]
+
+
+class ActivityResponse(BaseModel):
+    entries: list[ActivityEntry]
+    chain_valid: bool
+    chain_error: str | None
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -326,12 +333,24 @@ def get_project(request: Request, project_id: str) -> ProjectDetailResponse:
     return ProjectDetailResponse(project=store.load_project(project_id), job=job, modules=modules)
 
 
-@app.get("/api/projects/{project_id}/activity")
-def project_activity(request: Request, project_id: str) -> list[ActivityEntry]:
+@app.get("/api/projects/{project_id}/activity", response_model=ActivityResponse)
+def project_activity(request: Request, project_id: str) -> ActivityResponse:
     store = _store(request)
     _require_project(store, project_id)
     with store.lock(project_id):
-        return store.list_activity(project_id)
+        audit_path = store.project_dir(project_id) / "audit.jsonl"
+        valid, error = verify_audit(audit_path)
+        return ActivityResponse(entries=store.list_activity(project_id), chain_valid=valid, chain_error=error)
+
+
+@app.get("/api/projects/{project_id}/audit.jsonl")
+def download_audit(request: Request, project_id: str) -> FileResponse:
+    store = _store(request)
+    _require_project(store, project_id)
+    path = store.project_dir(project_id) / "audit.jsonl"
+    if not path.is_file():
+        raise HTTPException(404, "Audit log not found")
+    return FileResponse(path, media_type="application/x-ndjson", filename="audit.jsonl")
 
 
 @app.get("/api/projects/{project_id}/review", response_model=list[ReviewEntry])

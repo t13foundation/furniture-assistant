@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 from src.furniture.schema import ModuleModel
 from src.pipeline.agent import make_loader
 from src.schema.enums import DrawingType, classify_drawing
+from src.webapp.audit import entry_hash, next_previous_hash
 
 
 class ProjectFile(BaseModel):
@@ -242,8 +243,10 @@ class ProjectStore:
                 "module_id": module_id,
                 "detail": detail,
             }
+            entry["prev_hash"] = next_previous_hash(path)
+            entry["hash"] = entry_hash(entry)
             with path.open("a", encoding="utf-8") as stream:
-                stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                stream.write(json.dumps(entry, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
 
     def list_activity(self, project_id: str) -> list[ActivityEntry]:
         """Newest first."""

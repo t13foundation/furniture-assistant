@@ -81,11 +81,25 @@ Jobs live in memory only. On restart, a job left `queued`/`running` is reported 
 
 ## Storage and backups
 
+
 All state is plain files under the projects root — `<FA_OUTPUT_DIR>/webapp/projects`, default `results/webapp/projects`. Each project directory contains `project.json`, `uploads/`, `pages/` (cached PNG renders), `modules/` with `history/` (versions, `history-archive-*` after a re-analysis), `audit.jsonl`, `job.json`, `pricing.yaml`, `quote.xlsx`/`quote.json` and `exports/`.
 
 - **Back up the projects root directory** — that is the whole application state. Configuration (`config/`), `users.yaml` and the session secret are managed separately.
 - `pages/` is a regenerable cache (hundreds of MB for multi-page packages): it can be excluded from backups and pruned; pages re-render on next view.
 - `history-archive-*` directories grow with every re-analysis; prune old ones if you do not need rollback that far.
+
+## Audit log integrity
+
+Each new `audit.jsonl` record includes `prev_hash` and `hash`. The hash is SHA-256 of the entry, including `prev_hash`, serialized as canonical UTF-8 JSON (sorted keys, no whitespace). The first chained record uses the SHA-256 of any legacy, unhashed prefix as its `prev_hash`; a log without a legacy prefix starts from 64 zeroes. This anchors existing records without claiming that the legacy prefix itself is verified.
+
+Verify a project or every project under the projects root:
+
+```bash
+uv run python -m src.webapp.audit verify results/webapp/projects/<project-id>
+uv run python -m src.webapp.audit verify results/webapp/projects
+```
+
+The command exits `1` and reports the first broken line in each affected log. The Activity page displays the chain integrity result, and the raw log is downloadable from `/api/projects/{project_id}/audit.jsonl`. Keep exported logs with backups; shipping logs to a central system remains optional.
 
 ## Logs
 

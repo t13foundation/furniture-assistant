@@ -4,6 +4,7 @@ import { api } from './api'
 import { ProjectSidebar } from './ProjectView'
 import type {
   ActivityEntry,
+  ActivityResponse,
   ModuleModel,
   ModuleVersion,
   Override,
@@ -280,17 +281,21 @@ export function ActivityPage() {
   const { id = '' } = useParams()
   const [detail, setDetail] = useState<ProjectDetail | null>(null)
   const [activity, setActivity] = useState<ActivityEntry[]>([])
+  const [chainValid, setChainValid] = useState<boolean | null>(null)
+  const [chainError, setChainError] = useState<string | null>(null)
   const [error, setError] = useState('')
   useEffect(() => {
     let active = true
     void Promise.all([
       api<ProjectDetail>(`/api/projects/${encodeURIComponent(id)}`),
-      api<ActivityEntry[]>(`/api/projects/${encodeURIComponent(id)}/activity`),
+      api<ActivityResponse>(`/api/projects/${encodeURIComponent(id)}/activity`),
     ])
-      .then(([project, entries]) => {
+      .then(([project, response]) => {
         if (active) {
           setDetail(project)
-          setActivity(entries)
+          setActivity(response.entries)
+          setChainValid(response.chain_valid)
+          setChainError(response.chain_error)
         }
       })
       .catch((e: unknown) => {
@@ -310,6 +315,13 @@ export function ActivityPage() {
             <h1>Activity</h1>
           </div>
         </header>
+        <section className="report-card audit-integrity">
+          <span className={`status-pill ${chainValid === false ? 'error' : chainValid ? 'done' : ''}`}>
+            {chainValid === null ? 'Checking audit integrity…' : chainValid ? 'Audit chain verified' : 'Audit chain invalid'}
+          </span>
+          {chainError && <p role="alert">{chainError}</p>}
+          <a href={`/api/projects/${encodeURIComponent(id)}/audit.jsonl`}>Download audit log</a>
+        </section>
         {error && (
           <p role="alert" className="error-banner">
             {error}
