@@ -10,6 +10,7 @@ from pydantic_ai import Agent, BinaryContent
 from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIResponsesModel
 from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.usage import RunUsage
 
 from src.furniture.resolve import module_region
 from src.furniture.schema import (
@@ -111,12 +112,16 @@ async def interpret_page(
     units: Unit,
     on_usage: Callable[[object], None] | None = None,
 ) -> PageDraft:
-    result = await agent.run(
-        [page_prompt(marks, chains, text_runs, units), BinaryContent(data=image_png, media_type="image/png")],
-        model_settings={"max_tokens": _MAX_OUTPUT_TOKENS},
-    )
-    if on_usage:
-        on_usage(result.usage())
+    usage = RunUsage()
+    try:
+        result = await agent.run(
+            [page_prompt(marks, chains, text_runs, units), BinaryContent(data=image_png, media_type="image/png")],
+            model_settings={"max_tokens": _MAX_OUTPUT_TOKENS},
+            usage=usage,
+        )
+    finally:
+        if on_usage:
+            on_usage(usage)
     return result.output
 
 
@@ -155,10 +160,14 @@ async def refine_draft(
     on_usage: Callable[[object], None] | None = None,
 ) -> ModuleDraft:
     """Ask the model once more for the module's open questions; returns the full corrected draft."""
-    result = await agent.run(
-        [refine_prompt(module, draft), BinaryContent(data=image_png, media_type="image/png")],
-        model_settings={"max_tokens": _MAX_OUTPUT_TOKENS},
-    )
-    if on_usage:
-        on_usage(result.usage())
+    usage = RunUsage()
+    try:
+        result = await agent.run(
+            [refine_prompt(module, draft), BinaryContent(data=image_png, media_type="image/png")],
+            model_settings={"max_tokens": _MAX_OUTPUT_TOKENS},
+            usage=usage,
+        )
+    finally:
+        if on_usage:
+            on_usage(usage)
     return result.output.model_copy(update={"module_id": draft.module_id})

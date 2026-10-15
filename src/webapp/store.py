@@ -49,6 +49,18 @@ class UsageTotals(BaseModel):
     output_tokens: int = 0
     estimated_cost: float | None = None
 
+    def with_estimated_cost(
+        self, cost_per_million_input: float | None, cost_per_million_output: float | None
+    ) -> UsageTotals:
+        if cost_per_million_input is None or cost_per_million_output is None:
+            cost = None
+        else:
+            cost = round(
+                (self.input_tokens * cost_per_million_input + self.output_tokens * cost_per_million_output) / 1_000_000,
+                8,
+            )
+        return self.model_copy(update={"estimated_cost": cost})
+
 
 class UsageBreakdown(BaseModel):
     file_name: str
@@ -327,42 +339,26 @@ class ProjectStore:
         self,
         project_id: str,
         usage: UsageTotals,
-        cost_per_million_input: float | None,
-        cost_per_million_output: float | None,
         *,
         job: Job | None = None,
         file_name: str,
         page_index: int,
         module_id: str | None = None,
     ) -> None:
-        """Persist one agent run under the project lock, including an optional analysis-job breakdown."""
+        """Persist token totals under the project lock, including an optional analysis-job breakdown."""
         with self.lock(project_id):
 
             def add(total: UsageTotals, increment: UsageTotals) -> UsageTotals:
-                cost = (
-                    round((total.estimated_cost or 0) + increment.estimated_cost, 8)
-                    if increment.estimated_cost is not None
-                    else total.estimated_cost
-                )
                 return UsageTotals(
                     requests=total.requests + increment.requests,
                     input_tokens=total.input_tokens + increment.input_tokens,
                     output_tokens=total.output_tokens + increment.output_tokens,
-                    estimated_cost=cost,
                 )
 
-            estimated = None
-            if cost_per_million_input is not None and cost_per_million_output is not None:
-                estimated = round(
-                    (usage.input_tokens * cost_per_million_input + usage.output_tokens * cost_per_million_output)
-                    / 1_000_000,
-                    8,
-                )
-            increment = usage.model_copy(update={"estimated_cost": estimated})
-            total = add(self.load_usage(project_id), increment)
+            total = add(self.load_usage(project_id), usage)
             _write_atomic(self.project_dir(project_id) / "usage.json", total.model_dump_json(indent=2))
             if job is not None:
-                job.usage = add(job.usage, increment)
+                job.usage = add(job.usage, usage)
                 entry = next(
                     (
                         row
@@ -373,8 +369,8 @@ class ProjectStore:
                 )
                 if entry is None:
                     job.usage_breakdown.append(
-                        UsageBreakdown(file_name=file_name, page_index=page_index, module_id=module_id, usage=increment)
+                        UsageBreakdown(file_name=file_name, page_index=page_index, module_id=module_id, usage=usage)
                     )
                 else:
-                    entry.usage = add(entry.usage, increment)
+                    entry.usage = add(entry.usage, usage)
                 self.save_job(project_id, job)

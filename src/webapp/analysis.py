@@ -107,7 +107,6 @@ def rebuild(module: FurnitureModule, rules: ConstructionRules, **state) -> Modul
 def _usage_callback(
     store: ProjectStore,
     project_id: str,
-    config: AppConfig,
     file_name: str,
     page_index: int,
     module_id: str | None = None,
@@ -121,8 +120,6 @@ def _usage_callback(
                 input_tokens=int(getattr(raw_usage, "input_tokens", 0) or 0),
                 output_tokens=int(getattr(raw_usage, "output_tokens", 0) or 0),
             ),
-            config.models.cost_per_million_input,
-            config.models.cost_per_million_output,
             job=job,
             file_name=file_name,
             page_index=page_index,
@@ -186,7 +183,7 @@ async def refine_and_save(
             model.module,
             model.draft,
             on_usage=_usage_callback(
-                store, project_id, config, model.module.file_name, model.module.page_index, module_id, job
+                store, project_id, model.module.file_name, model.module.page_index, module_id, job
             ),
         )
     except Exception as exc:
@@ -284,7 +281,7 @@ async def run_analysis(project_id: str, store: ProjectStore, config: AppConfig, 
                     chains,
                     runs,
                     page_units,
-                    on_usage=_usage_callback(store, project_id, config, file.name, item.page_index, job=job),
+                    on_usage=_usage_callback(store, project_id, file.name, item.page_index, job=job),
                 )
             except Exception as exc:
                 if not agent_succeeded:

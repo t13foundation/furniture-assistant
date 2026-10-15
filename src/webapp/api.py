@@ -221,6 +221,11 @@ def _running(request: Request, project_id: str) -> bool:
     return task is not None and not task.done()
 
 
+def _usage_at_current_rates(request: Request, usage: UsageTotals) -> UsageTotals:
+    rates = request.app.state.config.models
+    return usage.with_estimated_cost(rates.cost_per_million_input, rates.cost_per_million_output)
+
+
 def _job(request: Request, project_id: str) -> Job | None:
     """Job state; a queued/running job without a live task (server restarted) is reported as error."""
     store = _store(request)
@@ -230,7 +235,17 @@ def _job(request: Request, project_id: str) -> Job | None:
             job.status, job.error, job.finished_at = "error", "Analysis interrupted (server restarted)", now_iso()
             store.save_job(project_id, job)
             store.append_audit(project_id, "analyze_finish", "system", detail=f"Error: {job.error}")
-        return job
+        if job is None:
+            return None
+        return job.model_copy(
+            update={
+                "usage": _usage_at_current_rates(request, job.usage),
+                "usage_breakdown": [
+                    row.model_copy(update={"usage": _usage_at_current_rates(request, row.usage)})
+                    for row in job.usage_breakdown
+                ],
+            }
+        )
 
 
 @app.get("/api/projects", response_model=list[ProjectListResponse])
@@ -326,7 +341,10 @@ def get_project(request: Request, project_id: str) -> ProjectDetailResponse:
         for m in store.list_modules(project_id)
     ]
     return ProjectDetailResponse(
-        project=store.load_project(project_id), job=job, usage=store.load_usage(project_id), modules=modules
+        project=store.load_project(project_id),
+        job=job,
+        usage=_usage_at_current_rates(request, store.load_usage(project_id)),
+        modules=modules,
     )
 
 
