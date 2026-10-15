@@ -4,7 +4,7 @@ import { api } from './api'
 import { ProjectSidebar } from './ProjectView'
 import type {
   ActivityEntry,
-  ActivityResponse,
+  ActivityIntegrityResponse,
   ModuleModel,
   ModuleVersion,
   Override,
@@ -281,21 +281,22 @@ export function ActivityPage() {
   const { id = '' } = useParams()
   const [detail, setDetail] = useState<ProjectDetail | null>(null)
   const [activity, setActivity] = useState<ActivityEntry[]>([])
-  const [chainStatus, setChainStatus] = useState<ActivityResponse['chain_status'] | null>(null)
+  const [chainStatus, setChainStatus] = useState<ActivityIntegrityResponse['chain_status'] | null>(null)
   const [chainError, setChainError] = useState<string | null>(null)
   const [error, setError] = useState('')
   useEffect(() => {
     let active = true
     void Promise.all([
       api<ProjectDetail>(`/api/projects/${encodeURIComponent(id)}`),
-      api<ActivityResponse>(`/api/projects/${encodeURIComponent(id)}/activity`),
+      api<ActivityEntry[]>(`/api/projects/${encodeURIComponent(id)}/activity`),
+      api<ActivityIntegrityResponse>(`/api/projects/${encodeURIComponent(id)}/activity/integrity`),
     ])
-      .then(([project, response]) => {
+      .then(([project, entries, integrity]) => {
         if (active) {
           setDetail(project)
-          setActivity(response.entries)
-          setChainStatus(response.chain_status)
-          setChainError(response.chain_error)
+          setActivity(entries)
+          setChainStatus(integrity.chain_status)
+          setChainError(integrity.chain_error)
         }
       })
       .catch((e: unknown) => {

@@ -672,7 +672,50 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ActivityResponse"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ActivityEntry"
+                  },
+                  "title": "Response Project Activity Api Projects  Project Id  Activity Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/activity/integrity": {
+      "get": {
+        "summary": "Project Activity Integrity",
+        "operationId": "project_activity_integrity_api_projects__project_id__activity_integrity_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityIntegrityResponse"
                 }
               }
             }
@@ -1355,18 +1398,16 @@
         ],
         "title": "ActivityEntry"
       },
-      "ActivityResponse": {
+      "ActivityIntegrityResponse": {
         "properties": {
-          "entries": {
-            "items": {
-              "$ref": "#/components/schemas/ActivityEntry"
-            },
-            "type": "array",
-            "title": "Entries"
-          },
-          "chain_valid": {
-            "type": "boolean",
-            "title": "Chain Valid"
+          "chain_status": {
+            "type": "string",
+            "enum": [
+              "unverified",
+              "verified",
+              "invalid"
+            ],
+            "title": "Chain Status"
           },
           "chain_error": {
             "anyOf": [
@@ -1379,24 +1420,25 @@
             ],
             "title": "Chain Error"
           },
-          "chain_status": {
-            "type": "string",
-            "enum": [
-              "unverified",
-              "verified",
-              "invalid"
+          "head_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Chain Status"
+            "title": "Head Hash"
           }
         },
         "type": "object",
         "required": [
-          "entries",
-          "chain_valid",
+          "chain_status",
           "chain_error",
-          "chain_status"
+          "head_hash"
         ],
-        "title": "ActivityResponse"
+        "title": "ActivityIntegrityResponse"
       },
       "AnswersBody": {
         "properties": {

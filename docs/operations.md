@@ -99,9 +99,9 @@ uv run python -m src.webapp.audit verify results/webapp/projects/<project-id>
 uv run python -m src.webapp.audit verify results/webapp/projects
 ```
 
-The command exits `1` and reports the first broken line in each affected log. The Activity page displays verified, unverified (legacy-only), or invalid status; malformed records are skipped in the activity table while causing an invalid integrity result. The raw log is downloadable from `/api/projects/{project_id}/audit.jsonl`.
+The command exits `1` and reports the first broken line in each affected log. `/api/projects/{project_id}/activity` continues to return an `ActivityEntry[]`; `/api/projects/{project_id}/activity/integrity` returns `chain_status`, `chain_error`, and `head_hash`. The Activity page displays verified, unverified (legacy-only), or invalid status; malformed records are skipped in the activity table while causing an invalid integrity result. The raw log is downloadable from `/api/projects/{project_id}/audit.jsonl`.
 
-Hash chaining detects edits and removals within the recorded chain, but it cannot detect tail truncation (including deletion of the entire log): the remaining prefix still verifies. To detect that, operators **must keep the latest chain head hash or an exported audit checkpoint outside the project directory** and compare it during audit/restore. Keep exported logs and their head checkpoints with backups; a checkpoint stored only alongside the mutable project files is not an independent trust anchor.
+Hash chaining detects edits and removals within the recorded chain, but it cannot detect tail truncation (including deletion of the entire log): the remaining prefix still verifies. The checkpoint lives beside the log in `project.json`; **anyone able to rewrite both files can forge a verified chain**. The only defense against that attacker is an externally retained copy of the latest `head_hash` (or an exported audit checkpoint) outside the project directory. Compare that external head during audit/restore; keep it with separately protected backups.
 
 ## Logs
 

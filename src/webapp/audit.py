@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -25,12 +28,80 @@ def _read_bytes(source: Path | bytes) -> bytes:
     return source.read_bytes() if source.exists() else b""
 
 
+def checkpoint_for_existing_log(raw: bytes) -> tuple[int, str] | None:
+    """Find and validate the first chained record for one-time checkpoint migration."""
+    lines = raw.splitlines(keepends=True)
+    first_hashed = None
+    for line_number, raw_line in enumerate(lines, 1):
+        try:
+            entry = json.loads(raw_line)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise ValueError(f"line {line_number}: invalid JSON") from None
+        if not isinstance(entry, dict):
+            raise ValueError(f"line {line_number}: expected a JSON object")
+        if "hash" in entry or "prev_hash" in entry:
+            first_hashed = line_number
+            break
+    if first_hashed is None:
+        return None
+    prefix = b"".join(lines[: first_hashed - 1])
+    legacy_hash = hashlib.sha256(prefix).hexdigest() if prefix else GENESIS_HASH
+    valid, error = verify_audit(raw, first_hashed, legacy_hash)
+    if not valid:
+        raise ValueError(error or "invalid audit chain")
+    return first_hashed, legacy_hash
+
+
+def audit_head_hash(raw: bytes) -> str | None:
+    lines = raw.splitlines()
+    if not lines:
+        return None
+    try:
+        entry = json.loads(lines[-1])
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    claimed = entry.get("hash") if isinstance(entry, dict) else None
+    return claimed if isinstance(claimed, str) else None
+
+
+def last_audit_record(path: Path) -> tuple[dict[str, Any] | None, bool]:
+    """Read the final record only; return whether it already has a line terminator."""
+    if not path.exists() or path.stat().st_size == 0:
+        return None, True
+    with path.open("rb") as stream:
+        stream.seek(0, 2)
+        end = stream.tell()
+        stream.seek(end - 1)
+        terminated = stream.read(1) == b"\n"
+        position = end - 1 if terminated else end
+        chunks = bytearray()
+        while position:
+            start = max(0, position - 4096)
+            stream.seek(start)
+            chunk = stream.read(position - start)
+            newline = chunk.rfind(b"\n")
+            if newline >= 0:
+                chunks[:0] = chunk[newline + 1 :]
+                break
+            chunks[:0] = chunk
+            position = start
+        try:
+            entry = json.loads(bytes(chunks))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise ValueError("audit log final line is not valid JSON") from None
+        if not isinstance(entry, dict):
+            raise ValueError("audit log final line is not a JSON object")
+        return entry, terminated
+
+
 def verify_audit(
     source: Path | bytes,
     chain_since: int | None = None,
     legacy_hash: str | None = None,
 ) -> tuple[bool, str | None]:
     """Verify a snapshot, allowing only the legacy prefix recorded in project metadata."""
+    metadata_path = None
+    metadata = None
     if isinstance(source, Path) and chain_since is None:
         metadata_path = source.parent / "project.json"
         if metadata_path.exists():
@@ -44,6 +115,24 @@ def verify_audit(
         raw = _read_bytes(source)
     except OSError as exc:
         return False, str(exc)
+    if chain_since is None and metadata_path is not None and metadata is not None:
+        try:
+            checkpoint = checkpoint_for_existing_log(raw)
+        except ValueError:
+            checkpoint = None
+        if checkpoint is not None:
+            chain_since, legacy_hash = checkpoint
+            metadata["audit_chain_since"] = chain_since
+            metadata["audit_legacy_hash"] = legacy_hash
+            fd, temporary = tempfile.mkstemp(dir=metadata_path.parent, prefix=".project.", suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                    json.dump(metadata, stream, ensure_ascii=False, indent=2)
+                os.replace(temporary, metadata_path)
+            except BaseException:
+                with contextlib.suppress(OSError):
+                    os.unlink(temporary)
+                raise
     lines = raw.splitlines(keepends=True)
     if chain_since is None:
         for line_number, raw_line in enumerate(lines, 1):
@@ -86,41 +175,6 @@ def verify_audit(
     if len(lines) < chain_since:
         return False, "chain record is missing"
     return True, None
-
-
-def last_audit_record(path: Path) -> dict[str, Any] | None:
-    """Read only the final complete record; reject partial or malformed tails."""
-    if not path.exists() or path.stat().st_size == 0:
-        return None
-    with path.open("rb") as stream:
-        stream.seek(0, 2)
-        end = stream.tell()
-        if end == 0:
-            return None
-        if end == 1:
-            raise ValueError("audit log has an incomplete final line")
-        stream.seek(end - 1)
-        if stream.read(1) != b"\n":
-            raise ValueError("audit log has an incomplete final line")
-        position = end - 1
-        chunks = bytearray()
-        while position:
-            start = max(0, position - 4096)
-            stream.seek(start)
-            chunk = stream.read(position - start)
-            newline = chunk.rfind(b"\n")
-            if newline >= 0:
-                chunks[:0] = chunk[newline + 1 :]
-                break
-            chunks[:0] = chunk
-            position = start
-        try:
-            entry = json.loads(bytes(chunks))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            raise ValueError("audit log final line is not valid JSON") from None
-        if not isinstance(entry, dict):
-            raise ValueError("audit log final line is not a JSON object")
-        return entry
 
 
 def main() -> int:

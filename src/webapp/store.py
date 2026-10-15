@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field, ValidationError
 from src.furniture.schema import ModuleModel
 from src.pipeline.agent import make_loader
 from src.schema.enums import DrawingType, classify_drawing
-from src.webapp.audit import entry_hash, last_audit_record, verify_audit
+from src.webapp.audit import checkpoint_for_existing_log, entry_hash, last_audit_record
 
 
 class ProjectFile(BaseModel):
@@ -244,27 +244,20 @@ class ProjectStore:
             initialized = project.audit_chain_since is None
             if initialized:
                 raw = path.read_bytes() if path.exists() else b""
-                lines = raw.splitlines(keepends=True)
-                first_hashed = None
-                for index, line in enumerate(lines, 1):
-                    try:
-                        existing = json.loads(line)
-                    except (UnicodeDecodeError, json.JSONDecodeError):
-                        raise ValueError(f"audit log line {index} is not valid JSON") from None
-                    if not isinstance(existing, dict):
-                        raise ValueError(f"audit log line {index} is not a JSON object")
-                    if "hash" in existing or "prev_hash" in existing:
-                        first_hashed = index
-                        break
-                project.audit_chain_since = first_hashed or len(lines) + 1
-                prefix = b"".join(lines[: project.audit_chain_since - 1])
-                project.audit_legacy_hash = hashlib.sha256(prefix).hexdigest() if prefix else "0" * 64
-                if first_hashed is not None:
-                    valid, error = verify_audit(raw, project.audit_chain_since, project.audit_legacy_hash)
-                    if not valid:
-                        raise ValueError(f"cannot extend invalid audit chain: {error}")
-                _write_atomic(directory / "project.json", project.model_dump_json(indent=2))
-            last = last_audit_record(path)
+                try:
+                    checkpoint = checkpoint_for_existing_log(raw)
+                except ValueError as exc:
+                    raise ValueError(f"cannot extend invalid audit chain: {exc}") from None
+                if checkpoint is None:
+                    lines = raw.splitlines(keepends=True)
+                    project.audit_chain_since = len(lines) + 1
+                    prefix = raw + (b"\n" if raw and not raw.endswith(b"\n") else b"")
+                    project.audit_legacy_hash = hashlib.sha256(prefix).hexdigest() if prefix else "0" * 64
+                else:
+                    project.audit_chain_since, project.audit_legacy_hash = checkpoint
+            if project.audit_chain_since is not None and project.audit_legacy_hash is None:
+                raise ValueError("audit chain checkpoint is incomplete")
+            last, terminated = last_audit_record(path)
             if last is None:
                 previous = project.audit_legacy_hash or "0" * 64
                 if project.audit_chain_since == 1:
@@ -291,8 +284,14 @@ class ProjectStore:
                 "prev_hash": previous,
             }
             entry["hash"] = entry_hash(entry)
-            with path.open("a", encoding="utf-8") as stream:
-                stream.write(json.dumps(entry, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
+            with path.open("ab") as stream:
+                if last is not None and not terminated:
+                    stream.write(b"\n")
+                stream.write(
+                    json.dumps(entry, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
+                )
+            if initialized:
+                _write_atomic(directory / "project.json", project.model_dump_json(indent=2))
 
     @staticmethod
     def list_activity_snapshot(snapshot: bytes) -> list[ActivityEntry]:
@@ -308,9 +307,20 @@ class ProjectStore:
         return list(reversed(entries))
 
     def audit_snapshot(self, project_id: str) -> tuple[bytes, Project]:
-        directory = self.project_dir(project_id)
-        path = directory / "audit.jsonl"
-        return (path.read_bytes() if path.exists() else b"", self.load_project(project_id))
+        with self.lock(project_id):
+            directory = self.project_dir(project_id)
+            path = directory / "audit.jsonl"
+            snapshot = path.read_bytes() if path.exists() else b""
+            project = self.load_project(project_id)
+            if project.audit_chain_since is None:
+                try:
+                    checkpoint = checkpoint_for_existing_log(snapshot)
+                except ValueError:
+                    checkpoint = None
+                if checkpoint is not None:
+                    project.audit_chain_since, project.audit_legacy_hash = checkpoint
+                    _write_atomic(directory / "project.json", project.model_dump_json(indent=2))
+            return snapshot, project
 
     def pricing_path(self, project_id: str) -> Path:
         return self.project_dir(project_id) / "pricing.yaml"

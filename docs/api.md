@@ -63,7 +63,8 @@ Module fields, override targets and issue codes are documented in [Data model](d
 | Method | Path | Request | Response | Auth |
 |---|---|---|---|---|
 | GET | `/api/projects/{project_id}/review` | — | `ReviewEntry[]` — per module: id, title, group, kind, status, `questions` | cookie |
-| GET | `/api/projects/{project_id}/activity` | — | `ActivityResponse` — `entries: ActivityEntry[]`, `chain_valid`, `chain_error`, `chain_status` (`verified`, `unverified`, `invalid`) | cookie |
+| GET | `/api/projects/{project_id}/activity` | — | `ActivityEntry[]` (legacy list contract) | cookie |
+| GET | `/api/projects/{project_id}/activity/integrity` | — | `ActivityIntegrityResponse` — `chain_status`, `chain_error`, `head_hash` | cookie |
 | GET | `/api/projects/{project_id}/audit.jsonl` | — | Raw `application/x-ndjson` audit log download | cookie |
 
 ## Reports
