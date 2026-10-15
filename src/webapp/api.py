@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import asyncio
 import os
+import secrets
 import socket
 from collections.abc import AsyncGenerator, Callable, Coroutine
 from contextlib import asynccontextmanager, suppress
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -236,7 +237,10 @@ def _job_fresh(job: Job | None) -> bool:
             except (PermissionError, ValueError):
                 pass
     try:
-        return datetime.now() - datetime.fromisoformat(job.heartbeat_at) < JOB_STALE_AFTER
+        heartbeat = datetime.fromisoformat(job.heartbeat_at)
+        if heartbeat.tzinfo is None:
+            heartbeat = heartbeat.replace(tzinfo=UTC)
+        return datetime.now(UTC) - heartbeat < JOB_STALE_AFTER
     except (TypeError, ValueError):
         return False
 
@@ -247,28 +251,28 @@ def _job_is_running(request: Request, project_id: str) -> bool:
         return _job_fresh(store.load_job(project_id))
 
 
-def _touch_job(store: ProjectStore, project_id: str, owner: str) -> None:
+def _touch_job(store: ProjectStore, project_id: str, claim_token: str) -> None:
     with store.lock(project_id):
         job = store.load_job(project_id)
-        if job and job.owner == owner and job.status in ("queued", "running"):
+        if job and job.claim_token == claim_token and job.status in ("queued", "running"):
             job.heartbeat_at = now_iso()
-            store.save_job(project_id, job)
+            store.save_job(project_id, job, claim_token=claim_token)
 
 
 async def _run_job_with_heartbeat(
-    app: FastAPI, project_id: str, runner: Callable[[], Coroutine[Any, Any, None]]
+    app: FastAPI, project_id: str, runner: Callable[[str], Coroutine[Any, Any, None]]
 ) -> None:
-    store = app.state.store
-    job = store.load_job(project_id)
-    if not job or not job.owner:
+    store: ProjectStore = app.state.store
+    job = await asyncio.to_thread(store.load_job, project_id)
+    if not job or not job.owner or not job.claim_token:
         return
-    owner = job.owner
-    task = asyncio.create_task(runner())
-    while not task.done():
-        done, _ = await asyncio.wait({task}, timeout=JOB_HEARTBEAT_SECONDS)
-        if not done:
-            _touch_job(store, project_id, owner)
+    owner, claim_token = job.owner, job.claim_token
+    task = asyncio.create_task(runner(claim_token))
     try:
+        while not task.done():
+            done, _ = await asyncio.wait({task}, timeout=JOB_HEARTBEAT_SECONDS)
+            if not done:
+                await asyncio.to_thread(_touch_job, store, project_id, claim_token)
         await task
     except asyncio.CancelledError:
         task.cancel()
@@ -276,23 +280,50 @@ async def _run_job_with_heartbeat(
             await task
         raise
     except Exception as exc:
+        error_message = f"{type(exc).__name__}: {exc}"
+
+        def mark_error() -> None:
+            with store.lock(project_id):
+                current = store.load_job(project_id)
+                if (
+                    current
+                    and current.owner == owner
+                    and current.claim_token == claim_token
+                    and current.status
+                    in (
+                        "queued",
+                        "running",
+                    )
+                ):
+                    current.status, current.error, current.finished_at = "error", error_message, now_iso()
+                    store.save_job(project_id, current, claim_token=claim_token)
+
+        await asyncio.to_thread(mark_error)
+        return
+
+    def mark_done() -> None:
         with store.lock(project_id):
             current = store.load_job(project_id)
-            if current and current.owner == owner and current.status in ("queued", "running"):
-                current.status, current.error, current.finished_at = "error", f"{type(exc).__name__}: {exc}", now_iso()
-                store.save_job(project_id, current)
-        return
-    with store.lock(project_id):
-        current = store.load_job(project_id)
-        if current and current.owner == owner and current.status in ("queued", "running"):
-            current.status = "done"
-            current.finished_at = now_iso()
-            current.heartbeat_at = now_iso()
-            if current.kind == "refine" and current.refine_module_id:
-                module = store.load_module(project_id, current.refine_module_id)
-                if module.refine_status == "error":
-                    current.status, current.error = "error", module.refine_error
-            store.save_job(project_id, current)
+            if (
+                current
+                and current.owner == owner
+                and current.claim_token == claim_token
+                and current.status
+                in (
+                    "queued",
+                    "running",
+                )
+            ):
+                current.status = "done"
+                current.finished_at = now_iso()
+                current.heartbeat_at = now_iso()
+                if current.kind == "refine" and current.refine_module_id:
+                    module = store.load_module(project_id, current.refine_module_id)
+                    if module.refine_status == "error":
+                        current.status, current.error = "error", module.refine_error
+                store.save_job(project_id, current, claim_token=claim_token)
+
+    await asyncio.to_thread(mark_done)
 
 
 def _start_analysis(app: FastAPI, project_id: str) -> None:
@@ -301,41 +332,49 @@ def _start_analysis(app: FastAPI, project_id: str) -> None:
         _run_job_with_heartbeat(
             app,
             project_id,
-            lambda: run_analysis(project_id, store, app.state.config, app.state.rules),
+            lambda claim: run_analysis(project_id, store, app.state.config, app.state.rules, claim),
         )
     )
 
 
 async def _recover_jobs(app: FastAPI) -> None:
     store = app.state.store
-    for project in store.list_projects():
-        with store.lock(project.id):
-            job = store.load_job(project.id)
-            if not job or job.status not in ("queued", "running") or _job_fresh(job):
-                continue
-            if job.kind == "refine":
-                job.status, job.error, job.finished_at = (
-                    "error",
-                    "Model re-run interrupted by server restart; start it again",
-                    now_iso(),
-                )
-                job.heartbeat_at = now_iso()
-                store.save_job(project.id, job)
-                if job.refine_module_id:
-                    try:
-                        module = store.load_module(project.id, job.refine_module_id)
-                    except KeyError:
-                        pass
-                    else:
-                        module.refine_status = "error"
-                        module.refine_error = job.error
-                        store.save_module(project.id, module, action="system")
-                store.append_audit(project.id, "refine_interrupted", "system", job.refine_module_id, job.error)
-                continue
-            job.status, job.owner, job.heartbeat_at = "queued", _owner(), now_iso()
-            store.save_job(project.id, job)
-            store.append_audit(project.id, "analyze_resume", "system")
-        _start_analysis(app, project.id)
+    for project in await asyncio.to_thread(store.list_projects):
+        should_start = await asyncio.to_thread(_recover_project_job, store, project.id)
+        if should_start:
+            _start_analysis(app, project.id)
+
+
+def _recover_project_job(store: ProjectStore, project_id: str) -> bool:
+    with store.lock(project_id):
+        job = store.load_job(project_id)
+        if not job or job.status not in ("queued", "running") or _job_fresh(job):
+            return False
+        if job.kind == "refine":
+            job.claim_token = secrets.token_hex(16)
+            job.status, job.error, job.finished_at = (
+                "error",
+                "Model re-run interrupted by server restart; start it again",
+                now_iso(),
+            )
+            job.heartbeat_at = now_iso()
+            store.save_job(project_id, job)
+            if job.refine_module_id:
+                try:
+                    module = store.load_module(project_id, job.refine_module_id)
+                except KeyError:
+                    pass
+                else:
+                    module.refine_status = "error"
+                    module.refine_error = job.error
+                    store.save_module(project_id, module, action="system")
+            store.append_audit(project_id, "refine_interrupted", "system", job.refine_module_id, job.error)
+            return False
+        job.status, job.owner, job.heartbeat_at = "queued", _owner(), now_iso()
+        job.claim_token = secrets.token_hex(16)
+        store.save_job(project_id, job)
+        store.append_audit(project_id, "analyze_resume", "system")
+        return True
 
 
 def _tasks(request: Request) -> dict[str, asyncio.Task]:
@@ -353,24 +392,25 @@ def _running(request: Request, project_id: str) -> bool:
     return _job_is_running(request, project_id)
 
 
-def _job(request: Request, project_id: str) -> Job | None:
-    """Return the durable job record, including work owned by another worker."""
+async def _job(request: Request, project_id: str) -> Job | None:
+    """Return the durable job record, recovering stale analysis before returning it."""
     store = _store(request)
-    with store.lock(project_id):
-        return store.load_job(project_id)
+    if await asyncio.to_thread(_recover_project_job, store, project_id):
+        _start_analysis(request.app, project_id)
+    return await asyncio.to_thread(store.load_job, project_id)
 
 
 @app.get("/api/projects", response_model=list[ProjectListResponse])
-def list_projects(request: Request) -> list[ProjectListResponse]:
+async def list_projects(request: Request) -> list[ProjectListResponse]:
     store = _store(request)
     rows = []
-    for project in store.list_projects():
-        job = _job(request, project.id)
+    for project in await asyncio.to_thread(store.list_projects):
+        job = await _job(request, project.id)
         rows.append(
             ProjectListResponse(
                 **project.model_dump(mode="json"),
                 job_status=job.status if job else None,
-                module_count=len(store.list_modules(project.id)),
+                module_count=len(await asyncio.to_thread(store.list_modules, project.id)),
             )
         )
     return rows
@@ -415,24 +455,28 @@ def _check_upload_limits(uploads: list[tuple[str, bytes]]) -> None:
 async def analyze(request: Request, project_id: str) -> StatusResponse:
     store = _store(request)
     _require_project(store, project_id)
-    with store.lock(project_id):
-        current = store.load_job(project_id)
-        if current is not None and _job_fresh(current):
-            raise HTTPException(
-                409, "Analysis already running" if current.kind == "analysis" else "A model re-run is in progress"
-            )
-        job = Job(status="queued", owner=_owner(), heartbeat_at=now_iso())
-        store.save_job(project_id, job)
-        store.append_audit(project_id, "analyze_start", request.state.username)
-        _start_analysis(request.app, project_id)
+
+    def reserve() -> None:
+        with store.lock(project_id):
+            current = store.load_job(project_id)
+            if current is not None and _job_fresh(current):
+                raise HTTPException(
+                    409, "Analysis already running" if current.kind == "analysis" else "A model re-run is in progress"
+                )
+            job = Job(status="queued", owner=_owner(), claim_token=secrets.token_hex(16), heartbeat_at=now_iso())
+            store.save_job(project_id, job)
+            store.append_audit(project_id, "analyze_start", request.state.username)
+
+    await asyncio.to_thread(reserve)
+    _start_analysis(request.app, project_id)
     return StatusResponse(status="queued")
 
 
 @app.get("/api/projects/{project_id}", response_model=ProjectDetailResponse)
-def get_project(request: Request, project_id: str) -> ProjectDetailResponse:
+async def get_project(request: Request, project_id: str) -> ProjectDetailResponse:
     store = _store(request)
     _require_project(store, project_id)
-    job = _job(request, project_id)
+    job = await _job(request, project_id)
     modules = [
         ModuleListEntry(
             module_id=m.module.module_id,
@@ -667,44 +711,50 @@ async def refine(request: Request, project_id: str, module_id: str) -> StatusRes
     """Ask the model once more about the module's open questions (background; poll the module)."""
     store = _store(request)
     _require_project(store, project_id)
-    with store.lock(project_id):
-        active = store.load_job(project_id)
-        if _job_fresh(active):
-            raise HTTPException(409, "Analysis or model re-run already running")
-        try:
-            latest = store.load_module(project_id, module_id)
-        except KeyError:
-            raise HTTPException(404, f"Unknown module {module_id}") from None
-        if latest.draft is None:
-            raise HTTPException(422, "Module was created by hand; there is no model interpretation to refine")
-        owner = _owner()
-        store.save_module(
-            project_id,
-            latest.model_copy(update={"refine_status": "running", "refine_error": None}),
-            user=getattr(request.state, "username", None) or "system",
-            action="refine",
-        )
-        store.save_job(
-            project_id,
-            Job(
-                status="running",
-                kind="refine",
-                refine_module_id=module_id,
-                owner=owner,
-                heartbeat_at=now_iso(),
-                started_at=now_iso(),
-            ),
-        )
-        store.append_audit(project_id, "refine_start", getattr(request.state, "username", None), module_id)
-        _tasks(request)[project_id] = asyncio.create_task(
-            _run_job_with_heartbeat(
-                request.app,
+
+    def reserve() -> str:
+        with store.lock(project_id):
+            active = store.load_job(project_id)
+            if _job_fresh(active):
+                raise HTTPException(409, "Analysis or model re-run already running")
+            try:
+                latest = store.load_module(project_id, module_id)
+            except KeyError:
+                raise HTTPException(404, f"Unknown module {module_id}") from None
+            if latest.draft is None:
+                raise HTTPException(422, "Module was created by hand; there is no model interpretation to refine")
+            owner, claim_token = _owner(), secrets.token_hex(16)
+            store.save_module(
                 project_id,
-                lambda: refine_stored_module(
-                    store, project_id, module_id, request.app.state.config, request.app.state.rules
+                latest.model_copy(update={"refine_status": "running", "refine_error": None}),
+                user=getattr(request.state, "username", None) or "system",
+                action="refine",
+            )
+            store.save_job(
+                project_id,
+                Job(
+                    status="running",
+                    kind="refine",
+                    refine_module_id=module_id,
+                    owner=owner,
+                    claim_token=claim_token,
+                    heartbeat_at=now_iso(),
+                    started_at=now_iso(),
                 ),
             )
+            store.append_audit(project_id, "refine_start", getattr(request.state, "username", None), module_id)
+            return claim_token
+
+    await asyncio.to_thread(reserve)
+    _tasks(request)[project_id] = asyncio.create_task(
+        _run_job_with_heartbeat(
+            request.app,
+            project_id,
+            lambda claim: refine_stored_module(
+                store, project_id, module_id, request.app.state.config, request.app.state.rules, claim
+            ),
         )
+    )
     return StatusResponse(status="running")
 
 

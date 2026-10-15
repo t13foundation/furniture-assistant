@@ -29,7 +29,7 @@ Auth is enabled as soon as the users file (`FA_USERS_FILE`, default `config/user
 
 Uploads accept the drawing extensions `.pdf .tif .tiff .png .jpg .jpeg .dwg .p3d`. Limits are enforced per request: `FA_MAX_UPLOAD_MB` (default 50 MB per file) and `FA_MAX_FILES` (default 50 files) — both return `413`.
 
-The detail response is the polling endpoint: `job` is the current analysis job (`status` `queued → running → done | error`, per-page `items` with `pending/running/done/skipped/error` and produced `module_ids`), and `modules` lists every module with `status`, `question_count`, `attention_count`, `refine_status` and error/warning `issue_counts`. A job left `queued`/`running` by a server restart is reported as `error` ("Analysis interrupted (server restarted)") — run the analysis again.
+The detail response is the polling endpoint: `job` is the current analysis job (`status` `queued → running → done | error`, per-page `items` with `pending/running/done/skipped/error` and produced `module_ids`), and `modules` lists every module with `status`, `question_count`, `attention_count`, `refine_status` and error/warning `issue_counts`. Reading a stale `queued`/`running` job claims and resumes an analysis from the beginning; an interrupted refine is reported as `error` and must be started again.
 
 ## Analysis
 

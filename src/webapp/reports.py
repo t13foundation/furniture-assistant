@@ -44,11 +44,11 @@ class ProjectPricing(BaseModel):
 
 def _project_pricing(request: Request, project_id: str) -> tuple[Pricing, bool]:
     store = request.app.state.store
+    try:
+        project_dir = store.project_dir(project_id)
+    except ProjectNotFoundError:
+        raise HTTPException(404, f"Unknown project {project_id}") from None
     with store.lock(project_id):
-        try:
-            project_dir = store.project_dir(project_id)
-        except ProjectNotFoundError:
-            raise HTTPException(404, f"Unknown project {project_id}") from None
         path = project_dir / "pricing.yaml"
         return (load_pricing(path), False) if path.exists() else (load_pricing(_pricing_path()), True)
 
@@ -171,12 +171,12 @@ def _compare(lines: list[QuoteLine], models: list[ModuleModel], valuation: Valua
 @router.get("/api/projects/{project_id}/quote", response_model=QuoteComparison)
 def get_quote(request: Request, project_id: str) -> QuoteComparison:
     store = request.app.state.store
+    try:
+        project_dir = store.project_dir(project_id)
+    except ProjectNotFoundError:
+        raise HTTPException(404, f"Unknown project {project_id}") from None
     with store.lock(project_id):
-        try:
-            store.project_dir(project_id)
-            path = store.project_dir(project_id) / "quote.json"
-        except ProjectNotFoundError:
-            raise HTTPException(404, f"Unknown project {project_id}") from None
+        path = project_dir / "quote.json"
         if not path.exists():
             raise HTTPException(404, "No client quote uploaded")
         lines = [QuoteLine.model_validate(row) for row in json.loads(path.read_text(encoding="utf-8"))]

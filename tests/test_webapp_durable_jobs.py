@@ -4,12 +4,16 @@ import asyncio
 import multiprocessing
 import threading
 import time
-from datetime import datetime, timedelta
+from contextlib import suppress
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import cast
 
+import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from src.webapp import api
-from src.webapp.store import Job, ProjectStore, now_iso
+from src.webapp.store import Job, JobSupersededError, ProjectStore, now_iso
 
 
 def _contend(root: str, project_id: str, start, active, maximum) -> None:
@@ -51,16 +55,20 @@ def test_startup_resumes_stale_analysis(tmp_path, monkeypatch):
     project = store.create_project("test", [("drawing.png", b"png")])
     store.save_job(
         project.id,
-        Job(status="running", owner="dead-host:123", heartbeat_at=(datetime.now() - timedelta(minutes=2)).isoformat()),
+        Job(
+            status="running",
+            owner="dead-host:123",
+            heartbeat_at=(datetime.now(UTC) - timedelta(minutes=2)).isoformat(),
+        ),
     )
     resumed = threading.Event()
 
-    async def fake_analysis(project_id, project_store, config, rules):
+    async def fake_analysis(project_id, project_store, config, rules, claim_token):
         resumed.set()
         with project_store.lock(project_id):
             job = project_store.load_job(project_id)
             job.status, job.finished_at = "done", now_iso()
-            project_store.save_job(project_id, job)
+            project_store.save_job(project_id, job, claim_token)
 
     monkeypatch.setattr(api, "run_analysis", fake_analysis)
     with TestClient(api.app) as client:
@@ -78,7 +86,7 @@ def test_fresh_foreign_job_is_running_and_rejects_analyze(tmp_path, monkeypatch)
     monkeypatch.setenv("FA_OUTPUT_DIR", str(tmp_path / "output"))
     with TestClient(api.app) as client:
         project_id = client.post("/api/projects", files=[("files", ("drawing.png", b"png", "image/png"))]).json()["id"]
-        store = client.app.state.store
+        store = cast(FastAPI, client.app).state.store
         with store.lock(project_id):
             store.save_job(
                 project_id,
@@ -94,32 +102,179 @@ def test_touch_job_advances_heartbeat(tmp_path):
     store = ProjectStore(tmp_path)
     project = store.create_project("test", [("drawing.png", b"png")])
     old_heartbeat = "2000-01-01T00:00:00"
-    store.save_job(project.id, Job(status="running", owner="another-host:1", heartbeat_at=old_heartbeat))
+    claim_token = "claim"
+    store.save_job(
+        project.id,
+        Job(status="running", owner="another-host:1", claim_token=claim_token, heartbeat_at=old_heartbeat),
+    )
 
-    api._touch_job(store, project.id, "another-host:1")
+    api._touch_job(store, project.id, claim_token)
 
     job = store.load_job(project.id)
-    assert job is not None and job.heartbeat_at > old_heartbeat
+    assert job is not None and job.heartbeat_at is not None and job.heartbeat_at > old_heartbeat
 
 
 def test_live_job_stays_fresh_and_rejects_second_analysis(tmp_path, monkeypatch):
     monkeypatch.setenv("FA_OUTPUT_DIR", str(tmp_path / "output"))
-    monkeypatch.setattr(api, "JOB_STALE_AFTER", timedelta(milliseconds=120))
-    monkeypatch.setattr(api, "JOB_HEARTBEAT_SECONDS", 0.02)
-    monkeypatch.setattr(api, "now_iso", lambda: datetime.now().isoformat(timespec="milliseconds"))
+    monkeypatch.setattr(api, "JOB_STALE_AFTER", timedelta(seconds=30))
+    monkeypatch.setattr(api, "JOB_HEARTBEAT_SECONDS", 0.01)
+    heartbeat = threading.Event()
+    touch = api._touch_job
 
-    async def keep_running(project_id, store, _config, _rules):
-        with store.lock(project_id):
-            job = store.load_job(project_id)
-            job.status = "running"
-            store.save_job(project_id, job)
+    def touched(store: ProjectStore, project_id: str, claim_token: str) -> None:
+        touch(store, project_id, claim_token)
+        heartbeat.set()
+
+    monkeypatch.setattr(api, "_touch_job", touched)
+
+    async def keep_running(project_id, store, _config, _rules, claim_token):
         await asyncio.Event().wait()
 
     monkeypatch.setattr(api, "run_analysis", keep_running)
     with TestClient(api.app) as client:
         project_id = client.post("/api/projects", files=[("files", ("drawing.png", b"png", "image/png"))]).json()["id"]
         assert client.post(f"/api/projects/{project_id}/analyze").status_code == 202
-        time.sleep(0.35)
+        assert heartbeat.wait(timeout=2)
         details = client.get(f"/api/projects/{project_id}").json()
-        assert details["job"]["status"] == "running"
+        assert details["job"]["status"] == "queued"
         assert client.post(f"/api/projects/{project_id}/analyze").status_code == 409
+
+
+def test_missing_project_pricing_and_quote_are_not_found(tmp_path, monkeypatch):
+    monkeypatch.setenv("FA_OUTPUT_DIR", str(tmp_path / "output"))
+    with TestClient(api.app) as client:
+        assert client.get("/api/projects/missing/pricing").status_code == 404
+        assert client.get("/api/projects/missing/quote").status_code == 404
+
+
+def test_job_claim_fences_old_runner_writes(tmp_path):
+    store = ProjectStore(tmp_path)
+    project = store.create_project("test", [("drawing.png", b"png")])
+    old = Job(status="running", owner="worker:1", claim_token="old", heartbeat_at=now_iso())
+    store.save_job(project.id, old)
+    store.save_job(
+        project.id,
+        Job(status="running", owner="worker:2", claim_token="new", heartbeat_at=now_iso()),
+    )
+
+    with store.lock(project.id), pytest.raises(JobSupersededError):
+        store.save_job(project.id, old, claim_token="old")
+    saved = store.load_job(project.id)
+    assert saved is not None and saved.claim_token == "new"
+
+
+def test_heartbeat_timestamps_are_utc_and_legacy_naive_is_fresh(monkeypatch):
+    assert datetime.fromisoformat(now_iso()).utcoffset() == UTC.utcoffset(datetime.now(UTC))
+    monkeypatch.setattr(api, "JOB_STALE_AFTER", timedelta(seconds=30))
+    legacy = (datetime.now(UTC) - timedelta(seconds=2)).replace(tzinfo=None).isoformat()
+    assert api._job_fresh(Job(status="running", owner="remote:1", heartbeat_at=legacy))
+
+
+def test_stale_refine_recovery_invalidates_old_runner_claim(tmp_path):
+    store = ProjectStore(tmp_path)
+    project = store.create_project("test", [("drawing.png", b"png")])
+    old = Job(
+        status="running",
+        kind="refine",
+        owner="remote:1",
+        claim_token="old",
+        heartbeat_at=(datetime.now(UTC) - timedelta(minutes=2)).isoformat(),
+    )
+    store.save_job(project.id, old)
+
+    assert not api._recover_project_job(store, project.id)
+    saved = store.load_job(project.id)
+    assert saved is not None and saved.status == "error" and saved.claim_token != "old"
+    with pytest.raises(JobSupersededError):
+        store.save_job(project.id, old, claim_token="old")
+
+
+def test_cancelling_heartbeat_wrapper_cancels_runner(tmp_path, monkeypatch):
+    store = ProjectStore(tmp_path)
+    project = store.create_project("test", [("drawing.png", b"png")])
+    store.save_job(
+        project.id,
+        Job(status="running", owner="worker:1", claim_token="run", heartbeat_at=now_iso()),
+    )
+    app = FastAPI()
+    app.state.store = store
+    monkeypatch.setattr(api, "JOB_HEARTBEAT_SECONDS", 3600)
+
+    async def verify_cancellation():
+        started, cancelled = asyncio.Event(), asyncio.Event()
+
+        async def runner(_claim_token: str) -> None:
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+        wrapper = asyncio.create_task(api._run_job_with_heartbeat(app, project.id, runner))
+        await started.wait()
+        wrapper.cancel()
+        with suppress(asyncio.CancelledError):
+            await wrapper
+        assert cancelled.is_set()
+
+    asyncio.run(verify_cancellation())
+
+
+def test_job_read_recovers_stale_job_after_startup(tmp_path, monkeypatch):
+    monkeypatch.setenv("FA_OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr(api, "JOB_STALE_AFTER", timedelta(seconds=1))
+    started = threading.Event()
+
+    async def fake_analysis(project_id, store, config, rules, claim_token):
+        started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(api, "run_analysis", fake_analysis)
+    with TestClient(api.app) as client:
+        project_id = client.post("/api/projects", files=[("files", ("drawing.png", b"png", "image/png"))]).json()["id"]
+        store = ProjectStore(tmp_path / "output" / "webapp" / "projects")
+        store.save_job(
+            project_id,
+            Job(
+                status="running",
+                owner="dead-host:123",
+                claim_token="dead",
+                heartbeat_at=(datetime.now(UTC) - timedelta(seconds=2)).isoformat(),
+            ),
+        )
+        assert client.get(f"/api/projects/{project_id}").status_code == 200
+        assert started.wait(timeout=2)
+        job = store.load_job(project_id)
+        assert job is not None and job.claim_token != "dead"
+
+
+def test_analyze_lock_wait_leaves_event_loop_responsive(tmp_path, monkeypatch):
+    monkeypatch.setenv("FA_OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr(api, "run_analysis", lambda *_args: asyncio.sleep(0))
+    with TestClient(api.app) as client:
+        project_id = client.post("/api/projects", files=[("files", ("drawing.png", b"png", "image/png"))]).json()["id"]
+        store = ProjectStore(tmp_path / "output" / "webapp" / "projects")
+        started, health_done = threading.Event(), threading.Event()
+
+        def request_analysis() -> None:
+            started.set()
+            assert client.post(f"/api/projects/{project_id}/analyze").status_code == 202
+
+        def request_health() -> None:
+            assert client.get("/api/health").status_code == 200
+            health_done.set()
+
+        with store.lock(project_id):
+            request_thread = threading.Thread(target=request_analysis)
+            request_thread.start()
+            assert started.wait(timeout=2)
+            health_thread = threading.Thread(target=request_health)
+            health_thread.start()
+            responsive = health_done.wait(timeout=2)
+
+        request_thread.join(timeout=2)
+        health_thread.join(timeout=2)
+        assert responsive
+        assert not request_thread.is_alive()
+        assert not health_thread.is_alive()

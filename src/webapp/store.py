@@ -20,7 +20,7 @@ import tempfile
 import threading
 import time
 from contextlib import AbstractContextManager
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -62,6 +62,7 @@ class Job(BaseModel):
     kind: Literal["analysis", "refine"] = "analysis"
     refine_module_id: str | None = None
     owner: str | None = None
+    claim_token: str | None = None
     heartbeat_at: str | None = None
 
 
@@ -85,8 +86,12 @@ class ProjectNotFoundError(KeyError):
     pass
 
 
+class JobSupersededError(RuntimeError):
+    """Raised when a runner attempts to write after another run claimed the job."""
+
+
 def now_iso() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _write_atomic(path: Path, text: str) -> None:
@@ -231,17 +236,31 @@ class ProjectStore:
         return target
 
     # ── Modules ───────────────────────────────────────────────────────
+    def _check_job_claim(self, project_id: str, claim_token: str | None) -> None:
+        if claim_token is None:
+            return
+        current = self.load_job(project_id)
+        if current is None or current.claim_token != claim_token:
+            raise JobSupersededError(f"Job claim for project {project_id} was superseded")
 
     def _modules_dir(self, project_id: str) -> Path:
         path = self.project_dir(project_id) / "modules"
         path.mkdir(exist_ok=True)
         return path
 
-    def save_module(self, project_id: str, model: ModuleModel, user: str = "system", action: str = "save") -> None:
+    def save_module(
+        self,
+        project_id: str,
+        model: ModuleModel,
+        user: str = "system",
+        action: str = "save",
+        claim_token: str | None = None,
+    ) -> None:
         """Save current state and a durable, monotonic version under the project lock.
 
         A save that changes nothing (e.g. a cross-check pass over an unaffected module) adds no version."""
         with self.lock(project_id):
+            self._check_job_claim(project_id, claim_token)
             module_id = Path(model.module.module_id).name
             modules = self._modules_dir(project_id)
             history = modules / "history" / module_id
@@ -329,31 +348,35 @@ class ProjectStore:
             n += 1
         return candidate
 
-    def clear_modules(self, project_id: str) -> None:
-        """Drop the current modules before a re-analysis.
+    def clear_modules(self, project_id: str, claim_token: str | None = None) -> None:
+        """Drop current modules and archive old history before a re-analysis.
 
-        Their version history is archived (not shown in the UI) instead of deleted: restoring a version
-        from a previous analysis would silently resurrect its stale geometry, but the data stays on disk.
+        Restoring a version from the previous analysis would silently resurrect stale geometry,
+        so the old data remains on disk but outside the active history.
         """
-        modules = self._modules_dir(project_id)
-        for path in modules.glob("*.json"):
-            path.unlink()
-        history = modules / "history"
-        if history.exists():
-            history.rename(modules / f"history-archive-{time.strftime('%Y%m%d_%H%M%S')}")
+        with self.lock(project_id):
+            self._check_job_claim(project_id, claim_token)
+            modules = self._modules_dir(project_id)
+            for path in modules.glob("*.json"):
+                path.unlink()
+            history = modules / "history"
+            if history.exists():
+                history.rename(modules / f"history-archive-{time.strftime('%Y%m%d_%H%M%S')}")
 
     # ── Job ───────────────────────────────────────────────────────────
 
-    def save_job(self, project_id: str, job: Job) -> None:
-        existing = self.load_job(project_id)
-        if (
-            existing
-            and existing.owner == job.owner
-            and existing.heartbeat_at
-            and (job.heartbeat_at is None or existing.heartbeat_at > job.heartbeat_at)
-        ):
-            job.heartbeat_at = existing.heartbeat_at
-        _write_atomic(self.project_dir(project_id) / "job.json", job.model_dump_json(indent=2))
+    def save_job(self, project_id: str, job: Job, claim_token: str | None = None) -> None:
+        with self.lock(project_id):
+            self._check_job_claim(project_id, claim_token)
+            existing = self.load_job(project_id)
+            if (
+                existing
+                and existing.owner == job.owner
+                and existing.heartbeat_at
+                and (job.heartbeat_at is None or existing.heartbeat_at > job.heartbeat_at)
+            ):
+                job.heartbeat_at = existing.heartbeat_at
+            _write_atomic(self.project_dir(project_id) / "job.json", job.model_dump_json(indent=2))
 
     def load_job(self, project_id: str) -> Job | None:
         path = self.project_dir(project_id) / "job.json"
