@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import multiprocessing
 import threading
 import time
@@ -87,3 +88,38 @@ def test_fresh_foreign_job_is_running_and_rejects_analyze(tmp_path, monkeypatch)
         assert details["job"]["status"] == "running"
         response = client.post(f"/api/projects/{project_id}/analyze")
         assert response.status_code == 409
+
+
+def test_touch_job_advances_heartbeat(tmp_path):
+    store = ProjectStore(tmp_path)
+    project = store.create_project("test", [("drawing.png", b"png")])
+    old_heartbeat = "2000-01-01T00:00:00"
+    store.save_job(project.id, Job(status="running", owner="another-host:1", heartbeat_at=old_heartbeat))
+
+    api._touch_job(store, project.id, "another-host:1")
+
+    job = store.load_job(project.id)
+    assert job is not None and job.heartbeat_at > old_heartbeat
+
+
+def test_live_job_stays_fresh_and_rejects_second_analysis(tmp_path, monkeypatch):
+    monkeypatch.setenv("FA_OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr(api, "JOB_STALE_AFTER", timedelta(milliseconds=120))
+    monkeypatch.setattr(api, "JOB_HEARTBEAT_SECONDS", 0.02)
+    monkeypatch.setattr(api, "now_iso", lambda: datetime.now().isoformat(timespec="milliseconds"))
+
+    async def keep_running(project_id, store, _config, _rules):
+        with store.lock(project_id):
+            job = store.load_job(project_id)
+            job.status = "running"
+            store.save_job(project_id, job)
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(api, "run_analysis", keep_running)
+    with TestClient(api.app) as client:
+        project_id = client.post("/api/projects", files=[("files", ("drawing.png", b"png", "image/png"))]).json()["id"]
+        assert client.post(f"/api/projects/{project_id}/analyze").status_code == 202
+        time.sleep(0.35)
+        details = client.get(f"/api/projects/{project_id}").json()
+        assert details["job"]["status"] == "running"
+        assert client.post(f"/api/projects/{project_id}/analyze").status_code == 409

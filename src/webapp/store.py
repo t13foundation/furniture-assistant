@@ -346,7 +346,12 @@ class ProjectStore:
 
     def save_job(self, project_id: str, job: Job) -> None:
         existing = self.load_job(project_id)
-        if existing and existing.owner == job.owner and existing.heartbeat_at:
+        if (
+            existing
+            and existing.owner == job.owner
+            and existing.heartbeat_at
+            and (job.heartbeat_at is None or existing.heartbeat_at > job.heartbeat_at)
+        ):
             job.heartbeat_at = existing.heartbeat_at
         _write_atomic(self.project_dir(project_id) / "job.json", job.model_dump_json(indent=2))
 
