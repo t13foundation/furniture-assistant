@@ -86,7 +86,8 @@ Read directly from the environment (not part of `AppConfig`):
 | `FA_USERS_FILE` | `src/webapp/auth.py` | Path to `users.yaml`. Auth is enabled iff the file exists and lists at least one user. | `config/users.yaml` |
 | `FA_SESSION_SECRET` | `src/webapp/auth.py` | HMAC key signing session cookies. **Set this in production.** | auto-generated `config/.session_secret` (see [Operations](operations.md#session-secret)) |
 | `FA_COOKIE_SECURE` | `src/webapp/api.py` | Adds the `secure` flag to the session cookie. Set to `true` once TLS terminates in front of the app. | `false` |
-| `FA_MAX_UPLOAD_MB` | `src/webapp/api.py` | Per-file upload limit; larger files get HTTP 413. | `50` |
+| `FA_MAX_REQUEST_MB` | `src/webapp/api.py` | Maximum total multipart request body for project creation and quote import; rejected before parsing when oversized. | `200` |
+| `FA_MAX_UPLOAD_MB` | `src/webapp/api.py`, `src/webapp/reports.py` | Maximum size per uploaded file; larger files get HTTP 413. | `50` |
 | `FA_MAX_FILES` | `src/webapp/api.py` | Maximum files per project; more get HTTP 413. | `50` |
 | `OPENAI_API_KEY` | `src/furniture/interpret.py` | API key used when `FA_API_BASE` points at `api.openai.com` and no real key is configured. Read from env or `.env`. | unset |
 
