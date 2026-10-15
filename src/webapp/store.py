@@ -250,16 +250,31 @@ class ProjectStore:
         self, project_id: str, action: str, user: str | None, module_id: str | None = None, detail: str | None = None
     ) -> None:
         with self.lock(project_id):
-            path = self.project_dir(project_id) / "audit.jsonl"
-            entry = {
-                "at": now_iso(),
-                "user": user or "system",
-                "action": action,
-                "module_id": module_id,
-                "detail": detail,
-            }
-            with path.open("a", encoding="utf-8") as stream:
-                stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            self._append_audit(self.project_dir(project_id) / "audit.jsonl", action, user, module_id, detail)
+
+    def append_audit_in_directory(
+        self,
+        project_id: str,
+        directory: Path,
+        action: str,
+        user: str | None,
+        module_id: str | None = None,
+        detail: str | None = None,
+    ) -> None:
+        with self.lock(project_id):
+            self._append_audit(directory / "audit.jsonl", action, user, module_id, detail)
+
+    @staticmethod
+    def _append_audit(path: Path, action: str, user: str | None, module_id: str | None, detail: str | None) -> None:
+        entry = {
+            "at": now_iso(),
+            "user": user or "system",
+            "action": action,
+            "module_id": module_id,
+            "detail": detail,
+        }
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     def list_activity(self, project_id: str) -> list[ActivityEntry]:
         """Newest first."""

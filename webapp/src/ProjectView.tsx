@@ -298,7 +298,13 @@ export function ProjectSidebar({
               <button className="button primary" onClick={() => void saveProjectName()}>
                 Save project name
               </button>
-              <button className="button secondary" onClick={() => setEditingName(false)}>
+              <button
+                className="button secondary"
+                onClick={() => {
+                  setProjectName(null)
+                  setEditingName(false)
+                }}
+              >
                 Cancel rename
               </button>
             </div>

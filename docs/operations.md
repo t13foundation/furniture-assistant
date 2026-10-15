@@ -81,9 +81,9 @@ Jobs live in memory only. On restart, a job left `queued`/`running` is reported 
 
 ## Project deletion and trash
 
-`DELETE /api/projects/{id}` writes a `delete_project` audit entry, then moves the
-entire project directory out of the projects root to
-`<FA_OUTPUT_DIR>/webapp/trash/<id>-<timestamp>` (default: `results/webapp/trash/`).
+`DELETE /api/projects/{id}` moves the entire project directory out of the projects
+root to `<FA_OUTPUT_DIR>/webapp/trash/<id>-<timestamp>` (default:
+`results/webapp/trash/`) and writes a `delete_project` audit entry into the moved copy.
 Nothing is recursively removed by the API. The trashed directory retains its
 project files and audit log but is no longer listed or accessible through project
 endpoints. Deletion returns `409` while analysis or a model re-run is active.
@@ -96,9 +96,14 @@ confirming it is no longer needed and required backups are complete.
 
 ## Storage and backups
 
-All state is plain files under the projects root — `<FA_OUTPUT_DIR>/webapp/projects`, default `results/webapp/projects`. Each project directory contains `project.json`, `uploads/`, `pages/` (cached PNG renders), `modules/` with `history/` (versions, `history-archive-*` after a re-analysis), `audit.jsonl`, `job.json`, `pricing.yaml`, `quote.xlsx`/`quote.json` and `exports/`.
+All state is plain files under `<FA_OUTPUT_DIR>/webapp/` (default `results/webapp/`).
+This includes the active `projects/` root and `trash/`, which contains deleted projects
+that may still be needed for recovery. Each project directory contains `project.json`,
+`uploads/`, `pages/` (cached PNG renders), `modules/` with `history/` (versions,
+`history-archive-*` after a re-analysis), `audit.jsonl`, `job.json`, `pricing.yaml`,
+`quote.xlsx`/`quote.json` and `exports/`.
 
-- **Back up the projects root directory** — that is the whole application state. Configuration (`config/`), `users.yaml` and the session secret are managed separately.
+- **Back up `<FA_OUTPUT_DIR>/webapp/`** — back up both `projects/` and `trash/` together so trashed projects are not lost during a restore. Configuration (`config/`), `users.yaml` and the session secret are managed separately.
 - `pages/` is a regenerable cache (hundreds of MB for multi-page packages): it can be excluded from backups and pruned; pages re-render on next view.
 - `history-archive-*` directories grow with every re-analysis; prune old ones if you do not need rollback that far.
 

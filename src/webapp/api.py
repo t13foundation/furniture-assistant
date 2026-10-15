@@ -301,27 +301,28 @@ def delete_project(request: Request, project_id: str) -> Response:
     store = _store(request)
     _require_project(store, project_id)
     with store.lock(project_id):
+        _require_project(store, project_id)
         if _running(request, project_id) or _refine_running(request, project_id):
             raise HTTPException(409, "Cannot delete a project while analysis or model re-run is in progress")
-        store.append_audit(project_id, "delete_project", request.state.username)
-        store.move_project_to_trash(project_id)
+        trashed_project = store.move_project_to_trash(project_id)
+        store.append_audit_in_directory(project_id, trashed_project, "delete_project", request.state.username)
     return Response(status_code=204)
 
 
 @app.post("/api/projects/{project_id}/analyze", status_code=202)
 async def analyze(request: Request, project_id: str) -> StatusResponse:
     store = _store(request)
-    _require_project(store, project_id)
-    if _running(request, project_id):
-        raise HTTPException(409, "Analysis already running")
-    if _refine_running(request, project_id):
-        raise HTTPException(409, "A model re-run is in progress; wait for it before re-analysing")
     with store.lock(project_id):
+        _require_project(store, project_id)
+        if _running(request, project_id):
+            raise HTTPException(409, "Analysis already running")
+        if _refine_running(request, project_id):
+            raise HTTPException(409, "A model re-run is in progress; wait for it before re-analysing")
         store.save_job(project_id, Job(status="queued"))
         store.append_audit(project_id, "analyze_start", request.state.username)
-    _tasks(request)[project_id] = asyncio.create_task(
-        run_analysis(project_id, store, request.app.state.config, request.app.state.rules)
-    )
+        _tasks(request)[project_id] = asyncio.create_task(
+            run_analysis(project_id, store, request.app.state.config, request.app.state.rules)
+        )
     return StatusResponse(status="queued")
 
 
@@ -555,16 +556,16 @@ def answer_questions(request: Request, project_id: str, module_id: str, body: An
 @app.post("/api/projects/{project_id}/modules/{module_id}/refine", status_code=202)
 async def refine(request: Request, project_id: str, module_id: str) -> StatusResponse:
     """Ask the model once more about the module's open questions (background; poll the module)."""
-    current = get_module(request, project_id, module_id)
-    if _refine_running(request, project_id, module_id):
-        raise HTTPException(409, "Model re-run already running")
-    if _running(request, project_id):
-        raise HTTPException(409, "Analysis is running for this project")
-    if current.draft is None:
-        raise HTTPException(422, "Module was created by hand; there is no model interpretation to refine")
     store = _store(request)
     with store.lock(project_id):
-        latest = store.load_module(project_id, module_id)
+        _require_project(store, project_id)
+        if _refine_running(request, project_id, module_id):
+            raise HTTPException(409, "Model re-run already running")
+        if _running(request, project_id):
+            raise HTTPException(409, "Analysis is running for this project")
+        latest = get_module(request, project_id, module_id)
+        if latest.draft is None:
+            raise HTTPException(422, "Module was created by hand; there is no model interpretation to refine")
         store.save_module(
             project_id,
             latest.model_copy(update={"refine_status": "running", "refine_error": None}),
@@ -572,9 +573,9 @@ async def refine(request: Request, project_id: str, module_id: str) -> StatusRes
             action="refine",
         )
         store.append_audit(project_id, "refine_start", getattr(request.state, "username", None), module_id)
-    _tasks(request)[f"{project_id}/{module_id}"] = asyncio.create_task(
-        refine_stored_module(store, project_id, module_id, request.app.state.config, request.app.state.rules)
-    )
+        _tasks(request)[f"{project_id}/{module_id}"] = asyncio.create_task(
+            refine_stored_module(store, project_id, module_id, request.app.state.config, request.app.state.rules)
+        )
     return StatusResponse(status="running")
 
 

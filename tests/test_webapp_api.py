@@ -4,6 +4,8 @@ import asyncio
 import io
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 
 import pytest
 from fastapi.testclient import TestClient
@@ -80,12 +82,95 @@ def test_delete_project_moves_to_trash_and_hides_it(client, tmp_path):
 
 
 def test_delete_project_conflicts_while_analysis_runs(client, monkeypatch):
+    started = Event()
+    release = Event()
+
     async def slow_analysis(*_args, **_kwargs):
-        await asyncio.sleep(5)
+        started.set()
+        await asyncio.to_thread(release.wait)
 
     monkeypatch.setattr(api, "run_analysis", slow_analysis)
     project_id = _create(client)
     assert client.post(f"/api/projects/{project_id}/analyze").status_code == 202
+    try:
+        assert started.wait(timeout=3)
+        assert client.delete(f"/api/projects/{project_id}").status_code == 409
+        assert client.get(f"/api/projects/{project_id}").status_code == 200
+        assert [project["id"] for project in client.get("/api/projects").json()] == [project_id]
+    finally:
+        release.set()
+
+
+def test_analyze_rechecks_project_after_waiting_for_its_lock(client, monkeypatch):
+    project_id = _create(client)
+    store = client.app.state.store
+    project_lock = store.lock(project_id)
+    lock_requested = Event()
+    original_lock = store.lock
+
+    def observe_lock(requested_project_id):
+        lock = original_lock(requested_project_id)
+        if requested_project_id == project_id:
+            lock_requested.set()
+        return lock
+
+    monkeypatch.setattr(store, "lock", observe_lock)
+    project_lock.acquire()
+    released = False
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            response = executor.submit(client.post, f"/api/projects/{project_id}/analyze")
+            assert lock_requested.wait(timeout=3)
+            store.move_project_to_trash(project_id)
+            project_lock.release()
+            released = True
+            assert response.result(timeout=5).status_code == 404
+    finally:
+        if not released:
+            project_lock.release()
+
+
+def test_delete_project_conflicts_while_refine_runs(client, monkeypatch, two_door_module):
+    started = Event()
+    release = Event()
+    project_id = _create(client)
+    draft = ModuleDraft(
+        module_id="TEST",
+        title="Test wardrobe",
+        view_bbox=BoundingBox(x_min=0.1, y_min=0.1, x_max=0.5, y_max=0.9),
+    )
+    model = analysis.rebuild(two_door_module, client.app.state.rules, draft=draft)
+    client.app.state.store.save_module(project_id, model)
+
+    async def slow_refine(*_args, **_kwargs):
+        started.set()
+        await asyncio.to_thread(release.wait)
+
+    monkeypatch.setattr(api, "refine_stored_module", slow_refine)
+    assert client.post(f"/api/projects/{project_id}/modules/TEST/refine").status_code == 202
+    try:
+        assert started.wait(timeout=3)
+        assert client.delete(f"/api/projects/{project_id}").status_code == 409
+        assert client.get(f"/api/projects/{project_id}").status_code == 200
+        assert [project["id"] for project in client.get("/api/projects").json()] == [project_id]
+    finally:
+        release.set()
+
+
+def test_delete_project_does_not_audit_failed_move(client, monkeypatch):
+    project_id = _create(client)
+    store = client.app.state.store
+
+    def fail_move(_project_id):
+        raise OSError("trash is not writable")
+
+    monkeypatch.setattr(store, "move_project_to_trash", fail_move)
+    with pytest.raises(OSError, match="trash is not writable"):
+        client.delete(f"/api/projects/{project_id}")
+    assert client.get(f"/api/projects/{project_id}").status_code == 200
+    assert all(
+        entry["action"] != "delete_project" for entry in client.get(f"/api/projects/{project_id}/activity").json()
+    )
 
 
 def test_put_module_builds_and_exports(client, two_door_module):
