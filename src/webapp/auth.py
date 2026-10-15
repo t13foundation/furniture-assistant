@@ -20,8 +20,16 @@ SESSION_SECONDS = 60 * 60 * 24 * 7
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def environment_mode() -> str:
+    """Return the validated runtime mode from the process environment."""
+    value = os.environ.get("FA_ENV", "development").lower()
+    if value not in {"development", "production"}:
+        raise RuntimeError("FA_ENV must be 'development' or 'production'")
+    return value
+
+
 def is_production() -> bool:
-    return os.environ.get("FA_ENV", "development").strip().lower() == "production"
+    return environment_mode() == "production"
 
 
 def require_production_secret() -> None:

@@ -3,7 +3,7 @@
 Values are layered; the last layer that sets a value wins:
 
 1. `config/default.yaml` — checked-in defaults.
-2. `FA_*` environment variables. Outside production, the web app also loads a `.env` file from the repo root at startup. In production (`FA_ENV=production`), `.env` is not loaded; secrets must be provided by the process environment.
+2. `FA_*` environment variables. Outside production, the web app also loads a `.env` file from the repo root at startup. `FA_ENV` is resolved only from the process environment before `.env` is loaded; a value in `.env` is ignored. In production (`FA_ENV=production`), `.env` is not loaded; secrets must be provided by the process environment.
 3. CLI arguments (`main.py --api-base …`, `--orchestrator …`) — legacy pipeline only. The web app has no CLI layer.
 
 The loader is `AppConfig.from_yaml` in `config/settings.py`. The web app reads the same file and env at startup (lifespan in `src/webapp/api.py`); the legacy pipeline additionally applies CLI args on top.
@@ -83,16 +83,16 @@ Read directly from the environment (not part of `AppConfig`):
 
 | Env | Read in | Meaning | Default |
 |---|---|---|---|
-| `FA_ENV` | `src/webapp/api.py`, `src/webapp/auth.py` | Runtime mode. Production disables `.env` loading and requires `FA_SESSION_SECRET`; it also defaults the session cookie to `Secure`. | `development` |
+| `FA_ENV` | `src/webapp/api.py`, `src/webapp/auth.py` | Runtime mode, read from the process environment before dotenv loading; `.env` cannot select the mode. Exact values `development` or `production` (case-insensitive) only; any other value fails startup. Production disables `.env` loading and requires `FA_SESSION_SECRET`; it also defaults the session cookie to `Secure`. | `development` |
 | `FA_PUBLIC_URL` | `src/webapp/api.py` | Public app URL; an `https://` URL defaults the session cookie to `Secure`. | unset |
 | `FA_USERS_FILE` | `src/webapp/auth.py` | Path to `users.yaml`. Auth is enabled iff the file exists and lists at least one user. | `config/users.yaml` |
 | `FA_SESSION_SECRET` | `src/webapp/auth.py` | HMAC key signing session cookies. Required in production; in development, absent value uses a local fallback file. | unset |
-| `FA_COOKIE_SECURE` | `src/webapp/api.py` | Explicit `Secure` flag for the session cookie; when set, overrides the production / HTTPS defaults. | production or HTTPS URL: `true`; otherwise `false` |
+| `FA_COOKIE_SECURE` | `src/webapp/api.py` | Explicit `Secure` flag for the session cookie; accepts exactly `true`/`false`, `yes`/`no`, or `1`/`0` without surrounding whitespace, case-insensitively, and overrides the production / HTTPS defaults. Invalid values fail startup. | production or HTTPS URL: `true`; otherwise `false` |
 | `FA_MAX_UPLOAD_MB` | `src/webapp/api.py` | Per-file upload limit; larger files get HTTP 413. | `50` |
 | `FA_MAX_FILES` | `src/webapp/api.py` | Maximum files per project; more get HTTP 413. | `50` |
 | `OPENAI_API_KEY` | `src/furniture/interpret.py` | API key used when `FA_API_BASE` points at `api.openai.com` and no real key is configured. Read from process environment; `.env` only in development. | unset |
 
-In production, set `FA_ENV=production` and provide `FA_SESSION_SECRET` from a protected environment source (for example, a systemd credential or secret manager). The app will fail at startup if the secret is missing. `FA_COOKIE_SECURE` can explicitly override the default; otherwise the cookie is `Secure` in production or when `FA_PUBLIC_URL` uses HTTPS.
+In production, set `FA_ENV=production` in the process environment (values are case-insensitive). `.env` cannot select the runtime mode; if `FA_ENV` is absent from the process environment, the mode remains `development` even if `.env` contains an `FA_ENV` entry. Provide `FA_SESSION_SECRET` from a protected environment source (for example, a systemd credential or secret manager). The app fails at startup if the secret is missing or `FA_COOKIE_SECURE` is set to an invalid value. The cookie is `Secure` in production or when `FA_PUBLIC_URL` uses HTTPS, unless a valid explicit `FA_COOKIE_SECURE` value overrides it.
 
 ## `config/default.yaml`
 

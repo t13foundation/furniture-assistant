@@ -39,6 +39,7 @@ from src.webapp.auth import (
     auth_enabled,
     auth_middleware,
     create_session,
+    environment_mode,
     is_production,
     login_retry_after,
     record_login_result,
@@ -121,12 +122,29 @@ EXPORTS: dict[str, tuple[str, Callable[[list[ModuleModel], ConstructionRules, Pa
 }
 
 
+def _cookie_secure_override() -> bool | None:
+    value = os.environ.get("FA_COOKIE_SECURE")
+    if value is None:
+        return None
+    normalized = value.lower()
+    if normalized in {"1", "true", "yes"}:
+        return True
+    if normalized in {"0", "false", "no"}:
+        return False
+    raise RuntimeError("FA_COOKIE_SECURE must be a boolean: true/false, yes/no, or 1/0")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    if is_production():
+    mode = environment_mode()
+    if mode == "production":
         require_production_secret()
     else:
+        process_env = os.environ.get("FA_ENV")
         load_dotenv(DOTENV_PATH)
+        if process_env is None:
+            os.environ.pop("FA_ENV", None)
+    _cookie_secure_override()
     config = AppConfig.from_yaml(REPO_ROOT / "config" / "default.yaml")
     output_dir = Path(config.output.dir)
     if not output_dir.is_absolute():
@@ -184,10 +202,9 @@ def login(request: Request, body: LoginBody):
     if not ok:
         raise HTTPException(401, "Invalid username or password")
     response = JSONResponse({"username": body.username})
-    secure_env = os.environ.get("FA_COOKIE_SECURE")
-    if secure_env is not None:
-        secure = secure_env.lower() in ("1", "true", "yes")
-    else:
+    secure_override = _cookie_secure_override()
+    secure = secure_override
+    if secure is None:
         secure = is_production() or os.environ.get("FA_PUBLIC_URL", "").lower().startswith("https://")
     response.set_cookie(
         COOKIE_NAME,

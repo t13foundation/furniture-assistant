@@ -70,6 +70,47 @@ def test_production_requires_session_secret_and_ignores_dotenv(tmp_path, monkeyp
     assert not (tmp_path / "repo" / "config" / ".session_secret").exists()
 
 
+@pytest.mark.parametrize("environment", ["prod", "staging", "", "typo", " production "])
+def test_invalid_fa_environment_fails_startup(monkeypatch, environment):
+    monkeypatch.setenv("FA_ENV", environment)
+    with pytest.raises(RuntimeError, match="FA_ENV must be 'development' or 'production'"), TestClient(api.app):
+        pass
+
+
+@pytest.mark.parametrize(("environment", "expected"), [("DEVELOPMENT", False), ("Production", True)])
+def test_fa_environment_is_case_insensitive(tmp_path, monkeypatch, environment, expected):
+    from src.webapp import auth
+
+    monkeypatch.setenv("FA_ENV", environment)
+    monkeypatch.setenv("FA_SESSION_SECRET", "test-secret")
+    monkeypatch.setenv("FA_OUTPUT_DIR", str(tmp_path / "output"))
+    with TestClient(api.app):
+        assert auth.is_production() is expected
+
+
+def test_dotenv_cannot_select_runtime_mode(tmp_path, monkeypatch):
+    from src.webapp import auth
+
+    monkeypatch.delenv("FA_ENV", raising=False)
+    monkeypatch.delenv("FA_SESSION_SECRET", raising=False)
+    monkeypatch.setenv("FA_OUTPUT_DIR", str(tmp_path / "output"))
+    dotenv_path = tmp_path / ".env"
+    dotenv_path.write_text("FA_ENV=production\nFA_SESSION_SECRET=dotenv-secret\n", encoding="utf-8")
+    monkeypatch.setattr(api, "DOTENV_PATH", dotenv_path)
+
+    with TestClient(api.app):
+        assert not auth.is_production()
+        assert os.environ.get("FA_ENV") is None
+
+
+@pytest.mark.parametrize("value", ["tru", "", "maybe", "2", " true "])
+def test_invalid_cookie_secure_fails_startup(monkeypatch, value):
+    monkeypatch.setenv("FA_ENV", "development")
+    monkeypatch.setenv("FA_COOKIE_SECURE", value)
+    with pytest.raises(RuntimeError, match="FA_COOKIE_SECURE must be a boolean"), TestClient(api.app):
+        pass
+
+
 @pytest.mark.parametrize(
     ("environment", "public_url", "explicit", "expected_secure"),
     [
@@ -78,6 +119,8 @@ def test_production_requires_session_secret_and_ignores_dotenv(tmp_path, monkeyp
         ("development", "http://example.test", None, False),
         ("production", "https://example.test", "false", False),
         ("development", "https://example.test", "true", True),
+        ("development", None, "YES", True),
+        ("production", None, "0", False),
     ],
 )
 def test_login_cookie_secure_precedence(tmp_path, monkeypatch, environment, public_url, explicit, expected_secure):

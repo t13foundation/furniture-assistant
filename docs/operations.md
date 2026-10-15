@@ -41,7 +41,7 @@ uv run python -m src.webapp.users list
 uv run python -m src.webapp.users remove alice
 ```
 
-Sessions: the `fa_session` cookie (HMAC-signed `username|expiry`), `httponly`, `samesite=lax`, lifetime 7 days. The `secure` flag defaults on in production (`FA_ENV=production`) or when `FA_PUBLIC_URL` starts with `https://`. `FA_COOKIE_SECURE` explicitly overrides this default. With auth disabled every request is attributed to `system` in the audit log.
+Sessions: the `fa_session` cookie (HMAC-signed `username|expiry`), `httponly`, `samesite=lax`, lifetime 7 days. The `secure` flag defaults on in production (`FA_ENV=production`) or when `FA_PUBLIC_URL` starts with `https://`. `FA_COOKIE_SECURE` explicitly overrides this default; it accepts exactly `true`/`false`, `yes`/`no`, or `1`/`0` without surrounding whitespace, case-insensitively. Any other value fails startup.
 
 ## Session secret
 
@@ -91,10 +91,10 @@ The app logs to stdout/stderr only (standard `logging` + uvicorn access logs); t
 
 ## Production checklist
 
-- Set `FA_ENV=production`; this disables `.env` loading.
+- Set `FA_ENV=production` in the process environment; values are case-insensitive (`development` or `production` only), and `.env` cannot select the mode. An invalid value fails startup. Production disables `.env` loading.
 - Supply `FA_SESSION_SECRET` through a protected process environment / credential source. Startup fails if it is missing.
 - Set `FA_USERS_FILE` to a protected users file with at least one account.
-- Set `FA_PUBLIC_URL=https://…` when the public endpoint uses HTTPS. This defaults the cookie to `Secure`; `FA_COOKIE_SECURE` can explicitly override it.
+- Set `FA_PUBLIC_URL=https://…` when the public endpoint uses HTTPS. This defaults the cookie to `Secure`; `FA_COOKIE_SECURE` can explicitly override it using an accepted boolean spelling.
 - Keep the app behind TLS termination, bind uvicorn to loopback, and run one worker / one replica.
 - Keep model/API keys out of the repository and `.env`; inject them through the service environment or credential mechanism.
 
