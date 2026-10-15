@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import tarfile
 import time
 from pathlib import Path
@@ -224,12 +225,55 @@ def test_maintenance_rejects_missing_projects_root(tmp_path, monkeypatch, capsys
     assert "Projects root does not exist" in capsys.readouterr().err
 
 
-def test_maintenance_rejects_empty_projects_root(tmp_path):
+def test_maintenance_allows_fresh_empty_projects_root(tmp_path):
+    root = tmp_path / "projects"
+    root.mkdir()
+    assert prune(root, 1, archives=True, pages=True, trash=True, dry_run=True) == 0
+    output = tmp_path / "backup.tar.gz"
+
+    backup(root, output, include_pages=False)
+
+    assert output.is_file()
+    with tarfile.open(output, "r:gz") as archive:
+        assert "projects" in archive.getnames()
+
+
+def test_backup_refuses_empty_snapshot_over_existing_archive_unless_allowed(tmp_path):
     import pytest
 
-    root = tmp_path / "empty"
+    root = tmp_path / "wrong-root"
     root.mkdir()
-    with pytest.raises(RuntimeError, match="empty"):
-        prune(root, 1, archives=True, pages=False, trash=False, dry_run=True)
-    with pytest.raises(RuntimeError, match="empty"):
-        backup(root, tmp_path / "backup.tar.gz", include_pages=False)
+    (root / "unrelated.txt").write_text("not a project")
+    output = tmp_path / "backup.tar.gz"
+    output.write_bytes(b"previous backup")
+
+    with pytest.raises(RuntimeError, match="empty snapshot"):
+        backup(root, output, include_pages=False)
+    assert output.read_bytes() == b"previous backup"
+
+    backup(root, output, include_pages=False, allow_empty=True)
+
+    with tarfile.open(output, "r:gz") as archive:
+        assert "projects" in archive.getnames()
+
+
+def test_backup_skips_project_vanished_before_lock(tmp_path, monkeypatch, capsys):
+    root = tmp_path / "projects"
+    root.mkdir()
+    project = _make_project(root, "Vanishing project")
+    project_id = project.name
+    original_lock = ProjectStore.lock
+
+    def vanish_before_lock(store, requested_id):
+        if store.root.resolve() == root.resolve() and requested_id == project_id:
+            shutil.rmtree(project)
+        return original_lock(store, requested_id)
+
+    monkeypatch.setattr(ProjectStore, "lock", vanish_before_lock)
+    output = tmp_path / "backup.tar.gz"
+
+    backup(root, output, include_pages=False)
+
+    assert output.is_file()
+    assert not project.exists()
+    assert "Skipping vanished project during backup" in capsys.readouterr().out

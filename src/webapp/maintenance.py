@@ -22,18 +22,13 @@ TRASH_TIMESTAMP = re.compile(r".+-(\d{8}_\d{6}_\d{6})$")
 
 
 class MaintenanceRootError(RuntimeError):
-    """Raised when maintenance is pointed at a missing, empty or unsafe projects root."""
+    """Raised when maintenance is pointed at a missing or unsafe projects root."""
 
 
 def _projects_root(root: Path) -> Path:
     if root.is_symlink() or not root.is_dir():
         raise MaintenanceRootError(f"Projects root does not exist or is not a real directory: {root}")
-    resolved = root.resolve()
-    if not any(resolved.iterdir()):
-        trash = resolved.parent / "trash"
-        if trash.is_symlink() or not trash.is_dir() or not any(trash.iterdir()):
-            raise MaintenanceRootError(f"Projects root is empty: {resolved}")
-    return resolved
+    return root.resolve()
 
 
 def _confined(path: Path, base: Path) -> bool:
@@ -143,7 +138,7 @@ def prune(root: Path, older_than_days: int, *, archives: bool, pages: bool, tras
     return removed_bytes
 
 
-def backup(root: Path, output: Path, *, include_pages: bool) -> None:
+def backup(root: Path, output: Path, *, include_pages: bool, allow_empty: bool = False) -> None:
     root = _projects_root(root)
     output = output.expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -153,9 +148,10 @@ def backup(root: Path, output: Path, *, include_pages: bool) -> None:
         snapshot = Path(temp) / "snapshot"
         snapshot.mkdir()
         count = 0
+        skipped = 0
 
         def copy_projects(source: Path, destination_name: str) -> None:
-            nonlocal count
+            nonlocal count, skipped
             if source.is_symlink() or not source.is_dir():
                 return
             source_real = source.resolve()
@@ -168,20 +164,41 @@ def backup(root: Path, output: Path, *, include_pages: bool) -> None:
                 if not _confined(project_dir, source_real):
                     continue
 
-                with source_store.lock(project_dir.name):
-                    ignored = {".lock", ".maintenance.lock"}
-                    if not include_pages:
-                        ignored.add("pages")
-                    shutil.copytree(
-                        project_dir,
-                        destination / project_dir.name,
-                        symlinks=True,
-                        ignore=lambda _directory, names, ignored=ignored: [name for name in names if name in ignored],
-                    )
+                try:
+                    with source_store.lock(project_dir.name):
+                        if (
+                            project_dir.is_symlink()
+                            or not project_dir.is_dir()
+                            or not (project_dir / "project.json").is_file()
+                        ):
+                            skipped += 1
+                            print(f"Skipping vanished project during backup: {project_dir}")
+                            continue
+                        ignored = {".lock", ".maintenance.lock"}
+                        if not include_pages:
+                            ignored.add("pages")
+                        shutil.copytree(
+                            project_dir,
+                            destination / project_dir.name,
+                            symlinks=True,
+                            ignore=lambda _directory, names, ignored=ignored: [
+                                name for name in names if name in ignored
+                            ],
+                        )
+                except FileNotFoundError:
+                    if project_dir.is_symlink() or not project_dir.is_dir():
+                        skipped += 1
+                        print(f"Skipping vanished project during backup: {project_dir}")
+                        continue
+                    raise
                 count += 1
 
         copy_projects(root, "projects")
         copy_projects(trash_dir, "trash")
+        if count == 0 and output.exists() and not allow_empty:
+            raise MaintenanceRootError(
+                f"Refusing to replace existing backup with an empty snapshot: {output} (pass --allow-empty to override)"
+            )
         descriptor, temporary_name = tempfile.mkstemp(prefix=f".{output.name}.", suffix=".tmp", dir=output.parent)
         os.close(descriptor)
         temporary_output = Path(temporary_name)
@@ -192,7 +209,9 @@ def backup(root: Path, output: Path, *, include_pages: bool) -> None:
             os.replace(temporary_output, output)
         finally:
             temporary_output.unlink(missing_ok=True)
-    print(f"Created backup {output}: {count} projects, {output.stat().st_size} bytes")
+    print(
+        f"Created backup {output}: {count} projects, skipped {skipped} vanished entries, {output.stat().st_size} bytes"
+    )
 
 
 def _nonnegative_int(value: str) -> int:
@@ -217,6 +236,11 @@ def main() -> None:
     backup_parser = commands.add_parser("backup", help="create a consistent compressed project backup")
     backup_parser.add_argument("--output", type=Path, required=True)
     backup_parser.add_argument("--include-pages", action="store_true", help="include regenerable page PNG caches")
+    backup_parser.add_argument(
+        "--allow-empty",
+        action="store_true",
+        help="allow replacing an existing archive when no projects were found",
+    )
     args = parser.parse_args()
     try:
         root = _projects_root(projects_root())
@@ -234,7 +258,7 @@ def main() -> None:
             dry_run=args.dry_run,
         )
     else:
-        backup(root, args.output, include_pages=args.include_pages)
+        backup(root, args.output, include_pages=args.include_pages, allow_empty=args.allow_empty)
 
 
 if __name__ == "__main__":
