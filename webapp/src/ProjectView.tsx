@@ -120,16 +120,16 @@ export default function ProjectView() {
     }
   }, [id, detail?.job?.status])
   const selectedModuleId = moduleId ?? detail?.modules[0]?.module_id
-  const selection = useRef({ id, moduleId: selectedModuleId })
+  const selection = useRef({ id, moduleId: selectedModuleId, locationKey: location.key })
   useLayoutEffect(() => {
     projectIdRef.current = id
-    selection.current = { id, moduleId: selectedModuleId }
-  }, [id, selectedModuleId])
+    selection.current = { id, moduleId: selectedModuleId, locationKey: location.key }
+  }, [id, selectedModuleId, location.key])
   const projectLoaded = detail?.project.id === id
   useEffect(() => {
     if (!projectLoaded || !selectedModuleId) return
     let active = true
-    const key = `${id}:${selectedModuleId}`
+    const key = `${id}:${selectedModuleId}:${location.key}`
     void api<ModuleModel>(
       `/api/projects/${encodeURIComponent(id)}/modules/${encodeURIComponent(selectedModuleId)}`,
     )
@@ -145,12 +145,12 @@ export default function ProjectView() {
     return () => {
       active = false
     }
-  }, [projectLoaded, id, selectedModuleId])
+  }, [projectLoaded, id, selectedModuleId, location.key])
   const updateModel = useCallback(
     (value: ModuleModel) => {
       if (selection.current.id === id && selection.current.moduleId === value.module.module_id) {
         setModel(value)
-        setLoadedKey(`${id}:${value.module.module_id}`)
+        setLoadedKey(`${id}:${value.module.module_id}:${selection.current.locationKey}`)
       }
       if (selection.current.id === id) void refresh()
     },
@@ -169,7 +169,7 @@ export default function ProjectView() {
     detail?.job?.items.filter((item) => ['done', 'skipped', 'error'].includes(item.status)).length ?? 0
   const total = detail?.job?.items.length ?? 0
   const selectedModel =
-    model?.module.module_id === selectedModuleId && loadedKey === `${id}:${selectedModuleId}` ? model : null
+    model?.module.module_id === selectedModuleId && loadedKey === `${id}:${selectedModuleId}:${location.key}` ? model : null
   return (
     <div className="project-layout">
       <ProjectSidebar id={id} detail={detail} moduleId={selectedModuleId} />

@@ -41,7 +41,12 @@ type Page = 'files' | 'materials' | 'processes' | 'valuation' | 'pricing'
 export default function ProjectReport({ page }: { page: Exclude<Page, 'pricing'> }) {
   const { id = '' } = useParams()
   const [detail, setDetail] = useState<{ id: string; value: ProjectDetail } | null>(null)
-  const [error, setError] = useState<{ id: string; page: Page; message: string } | null>(null)
+  const [error, setError] = useState<{
+    id: string
+    page: Page
+    source: 'detail' | 'report'
+    message: string
+  } | null>(null)
   // Tagged with its page: the component stays mounted when navigating between report pages, so
   // one page's summary must never be rendered by another page's view.
   const [report, setReport] = useState<{
@@ -64,13 +69,19 @@ export default function ProjectReport({ page }: { page: Exclude<Page, 'pricing'>
         `/api/projects/${encodeURIComponent(id)}/${endpoint}`,
       )
         .then((data) => {
-          if (active && request === reportRequest) setReport({ id, page, data })
+          if (active && request === reportRequest) {
+            setReport({ id, page, data })
+            setError((current) =>
+              current?.id === id && current.page === page && current.source === 'report' ? null : current,
+            )
+          }
         })
         .catch((e: unknown) => {
           if (active && request === reportRequest)
             setError({
               id,
               page,
+              source: 'report',
               message: e instanceof Error ? e.message : 'Could not load report',
             })
         })
@@ -78,8 +89,11 @@ export default function ProjectReport({ page }: { page: Exclude<Page, 'pricing'>
     const loadDetail = async () => {
       try {
         const result = await api<ProjectDetail>(`/api/projects/${encodeURIComponent(id)}`)
-        if (!active) return
+        if (!active) return false
         setDetail({ id, value: result })
+        setError((current) =>
+          current?.id === id && current.page === page && current.source === 'detail' ? null : current,
+        )
         const running = result.job?.status === 'queued' || result.job?.status === 'running'
         if (polling && !running) {
           polling = false
@@ -92,6 +106,7 @@ export default function ProjectReport({ page }: { page: Exclude<Page, 'pricing'>
           setError({
             id,
             page,
+            source: 'detail',
             message: e instanceof Error ? e.message : 'Could not load project',
           })
         return false
