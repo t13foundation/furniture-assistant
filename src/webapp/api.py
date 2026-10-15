@@ -50,6 +50,7 @@ from src.webapp.store import (
     Project,
     ProjectNotFoundError,
     ProjectStore,
+    UsageTotals,
     now_iso,
 )
 
@@ -92,6 +93,7 @@ class ModuleListEntry(BaseModel):
 class ProjectDetailResponse(BaseModel):
     project: Project
     job: Job | None
+    usage: UsageTotals
     modules: list[ModuleListEntry]
 
 
@@ -323,7 +325,9 @@ def get_project(request: Request, project_id: str) -> ProjectDetailResponse:
         )
         for m in store.list_modules(project_id)
     ]
-    return ProjectDetailResponse(project=store.load_project(project_id), job=job, modules=modules)
+    return ProjectDetailResponse(
+        project=store.load_project(project_id), job=job, usage=store.load_usage(project_id), modules=modules
+    )
 
 
 @app.get("/api/projects/{project_id}/activity")

@@ -32,7 +32,7 @@ from src.furniture.resolve import (
 from src.furniture.rules import ConstructionRules
 from src.furniture.schema import DimensionMark, FurnitureModule, ModuleDraft, ModuleModel
 from src.schema.enums import DrawingType
-from src.webapp.store import Job, JobItem, ProjectStore, now_iso
+from src.webapp.store import Job, JobItem, ProjectStore, UsageTotals, now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +104,34 @@ def rebuild(module: FurnitureModule, rules: ConstructionRules, **state) -> Modul
     return build_module(module, rules).model_copy(update=state)
 
 
+def _usage_callback(
+    store: ProjectStore,
+    project_id: str,
+    config: AppConfig,
+    file_name: str,
+    page_index: int,
+    module_id: str | None = None,
+    job: Job | None = None,
+):
+    def record(raw_usage: object) -> None:
+        store.record_usage(
+            project_id,
+            UsageTotals(
+                requests=int(getattr(raw_usage, "requests", 0) or 0),
+                input_tokens=int(getattr(raw_usage, "input_tokens", 0) or 0),
+                output_tokens=int(getattr(raw_usage, "output_tokens", 0) or 0),
+            ),
+            config.models.cost_per_million_input,
+            config.models.cost_per_million_output,
+            job=job,
+            file_name=file_name,
+            page_index=page_index,
+            module_id=module_id,
+        )
+
+    return record
+
+
 def apply_refined(
     latest: ModuleModel, new_draft: ModuleDraft | None, rules: ConstructionRules, error: str | None = None
 ) -> ModuleModel:
@@ -139,11 +167,12 @@ async def refine_and_save(
     agent: Agent[None, ModuleDraft],
     png_path: Path,
     rules: ConstructionRules,
+    config: AppConfig,
+    job: Job | None = None,
 ) -> None:
-    """Ask the model again about the module's open questions, then merge under the project lock.
+    """Ask the model again, then merge under the project lock while preserving concurrent user edits.
 
-    The model call runs without the lock; edits the user makes meanwhile are kept because the result
-    is applied to the module as stored at that moment.
+    The model call runs without the lock; edits made while it runs are preserved when applying its result.
     """
     model = store.load_module(project_id, module_id)
     new_draft, error = None, None
@@ -151,7 +180,15 @@ async def refine_and_save(
         if model.draft is None:
             raise ValueError("Module has no model interpretation to refine")
         image_png = await asyncio.to_thread(_region_image, png_path, model.module)
-        new_draft = await refine_draft(agent, image_png, model.module, model.draft)
+        new_draft = await refine_draft(
+            agent,
+            image_png,
+            model.module,
+            model.draft,
+            on_usage=_usage_callback(
+                store, project_id, config, model.module.file_name, model.module.page_index, module_id, job
+            ),
+        )
     except Exception as exc:
         logger.exception("Refining %s/%s failed", project_id, module_id)
         error = f"{type(exc).__name__}: {exc}"
@@ -159,7 +196,7 @@ async def refine_and_save(
         try:
             latest = store.load_module(project_id, module_id)
         except KeyError:
-            return  # removed meanwhile (project re-analysed)
+            return  # module was removed by a re-analysis
         store.save_module(project_id, apply_refined(latest, new_draft, rules, error), action="refine")
         store.append_audit(project_id, "refine_finish", "system", module_id, error and f"Error: {error}")
 
@@ -195,7 +232,7 @@ async def refine_stored_module(
             )
             store.append_audit(project_id, "refine_finish", "system", module_id, f"Error: {exc}")
         return
-    await refine_and_save(store, project_id, module_id, agent, png_path, rules)
+    await refine_and_save(store, project_id, module_id, agent, png_path, rules, config)
     with store.lock(project_id):
         recheck_project(store, project_id, rules)
 
@@ -240,7 +277,15 @@ async def run_analysis(project_id: str, store: ProjectStore, config: AppConfig, 
             image_png = await asyncio.to_thread(_agent_image, png_path, marks)
             page_units = marks[0].unit if marks else "cm"
             try:
-                draft = await interpret_page(agent, image_png, marks, chains, runs, page_units)
+                draft = await interpret_page(
+                    agent,
+                    image_png,
+                    marks,
+                    chains,
+                    runs,
+                    page_units,
+                    on_usage=_usage_callback(store, project_id, config, file.name, item.page_index, job=job),
+                )
             except Exception as exc:
                 if not agent_succeeded:
                     # The model never answered: the run itself cannot work (server down, model not loaded).
@@ -257,7 +302,9 @@ async def run_analysis(project_id: str, store: ProjectStore, config: AppConfig, 
                     store.save_module(project_id, rebuild(module, rules, draft=module_draft), action="analysis")
                 if needs_refine(module):
                     # Feedback loop: one focused model re-run on what the first pass left open.
-                    await refine_and_save(store, project_id, module.module_id, refine_agent, png_path, rules)
+                    await refine_and_save(
+                        store, project_id, module.module_id, refine_agent, png_path, rules, config, job
+                    )
                 item.module_ids.append(module.module_id)
             item.status = "done"
         except _RunAbortedError as exc:
