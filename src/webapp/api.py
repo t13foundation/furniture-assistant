@@ -311,6 +311,10 @@ async def analyze(request: Request, project_id: str) -> StatusResponse:
     if _refine_running(request, project_id):
         raise HTTPException(409, "A model re-run is in progress; wait for it before re-analysing")
     await _probe_model_server(request)
+    if _running(request, project_id):
+        raise HTTPException(409, "Analysis already running")
+    if _refine_running(request, project_id):
+        raise HTTPException(409, "A model re-run is in progress; wait for it before re-analysing")
     with store.lock(project_id):
         store.save_job(project_id, Job(status="queued"))
         store.append_audit(project_id, "analyze_start", request.state.username)
@@ -567,6 +571,10 @@ async def refine(request: Request, project_id: str, module_id: str) -> StatusRes
     if current.draft is None:
         raise HTTPException(422, "Module was created by hand; there is no model interpretation to refine")
     await _probe_model_server(request)
+    if _refine_running(request, project_id, module_id):
+        raise HTTPException(409, "Model re-run already running")
+    if _running(request, project_id):
+        raise HTTPException(409, "Analysis is running for this project")
     get_module(request, project_id, module_id)
     with store.lock(project_id):
         latest = store.load_module(project_id, module_id)

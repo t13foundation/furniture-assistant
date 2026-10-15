@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import io
 import time
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
-from src.furniture.schema import CellDraft, ColumnDraft, MaterialSpec, ModuleDraft, PageDraft
+from src.furniture.schema import CellDraft, ColumnDraft, MaterialSpec, ModuleDraft, ModuleModel, PageDraft
 from src.schema.extraction import BoundingBox
 from src.webapp import analysis, api
 
@@ -94,6 +96,136 @@ def test_second_analyze_while_running_conflicts(client, monkeypatch):
     assert client.post(f"/api/projects/{project_id}/analyze").status_code == 202
     assert client.post(f"/api/projects/{project_id}/analyze").status_code == 409
     assert client.post("/api/projects/missing/analyze").status_code == 404
+
+
+def test_concurrent_analyze_requests_only_start_one_job(client, monkeypatch):
+    both_probes_entered = Event()
+    release_probes = Event()
+    probe_count = 0
+
+    async def blocked_probe(_request):
+        nonlocal probe_count
+        probe_count += 1
+        if probe_count == 2:
+            both_probes_entered.set()
+        while not release_probes.is_set():
+            await asyncio.sleep(0.01)
+
+    async def slow_analysis(*_args, **_kwargs):
+        await asyncio.sleep(5)
+
+    monkeypatch.setattr(api, "_probe_model_server", blocked_probe)
+    monkeypatch.setattr(api, "run_analysis", slow_analysis)
+    project_id = _create(client)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        requests = [pool.submit(client.post, f"/api/projects/{project_id}/analyze") for _ in range(2)]
+        try:
+            assert both_probes_entered.wait(timeout=5)
+        finally:
+            release_probes.set()
+        statuses = [request.result(timeout=5).status_code for request in requests]
+
+    assert sorted(statuses) == [202, 409]
+
+
+def test_running_analysis_conflicts_before_unavailable_model_probe(client, monkeypatch):
+    async def slow_analysis(*_args, **_kwargs):
+        await asyncio.sleep(5)
+
+    async def unavailable_probe(_request):
+        raise api.HTTPException(503, "model server unavailable")
+
+    monkeypatch.setattr(api, "run_analysis", slow_analysis)
+    project_id = _create(client)
+    assert client.post(f"/api/projects/{project_id}/analyze").status_code == 202
+    monkeypatch.setattr(api, "_probe_model_server", unavailable_probe)
+
+    response = client.post(f"/api/projects/{project_id}/analyze")
+
+    assert response.status_code == 409
+
+
+def _save_refinable_module(project_id: str, two_door_module) -> None:
+    draft = ModuleDraft(
+        module_id=two_door_module.module_id,
+        title=two_door_module.title,
+        view_bbox=two_door_module.view_bbox,
+    )
+    api.app.state.store.save_module(project_id, ModuleModel(module=two_door_module, draft=draft))
+
+
+def test_concurrent_refine_requests_only_start_one_rerun(client, monkeypatch, two_door_module):
+    both_probes_entered = Event()
+    release_probes = Event()
+    probe_count = 0
+
+    async def blocked_probe(_request):
+        nonlocal probe_count
+        probe_count += 1
+        if probe_count == 2:
+            both_probes_entered.set()
+        while not release_probes.is_set():
+            await asyncio.sleep(0.01)
+
+    async def slow_refine(*_args, **_kwargs):
+        await asyncio.sleep(5)
+
+    monkeypatch.setattr(api, "_probe_model_server", blocked_probe)
+    monkeypatch.setattr(api, "refine_stored_module", slow_refine)
+    project_id = _create(client)
+    _save_refinable_module(project_id, two_door_module)
+    url = f"/api/projects/{project_id}/modules/TEST/refine"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        requests = [pool.submit(client.post, url) for _ in range(2)]
+        try:
+            assert both_probes_entered.wait(timeout=5)
+        finally:
+            release_probes.set()
+        statuses = [request.result(timeout=5).status_code for request in requests]
+
+    assert sorted(statuses) == [202, 409]
+
+
+def test_analyze_and_refine_requests_conflict_after_probe(client, monkeypatch, two_door_module):
+    both_probes_entered = Event()
+    release_probes = Event()
+    probe_count = 0
+
+    async def blocked_probe(_request):
+        nonlocal probe_count
+        probe_count += 1
+        if probe_count == 2:
+            both_probes_entered.set()
+        while not release_probes.is_set():
+            await asyncio.sleep(0.01)
+
+    async def slow_analysis(*_args, **_kwargs):
+        await asyncio.sleep(5)
+
+    async def slow_refine(*_args, **_kwargs):
+        await asyncio.sleep(5)
+
+    monkeypatch.setattr(api, "_probe_model_server", blocked_probe)
+    monkeypatch.setattr(api, "run_analysis", slow_analysis)
+    monkeypatch.setattr(api, "refine_stored_module", slow_refine)
+    project_id = _create(client)
+    _save_refinable_module(project_id, two_door_module)
+    urls = [
+        f"/api/projects/{project_id}/analyze",
+        f"/api/projects/{project_id}/modules/TEST/refine",
+    ]
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        requests = [pool.submit(client.post, url) for url in urls]
+        try:
+            assert both_probes_entered.wait(timeout=5)
+        finally:
+            release_probes.set()
+        statuses = [request.result(timeout=5).status_code for request in requests]
+
+    assert sorted(statuses) == [202, 409]
 
 
 def _wait_for(client: TestClient, url: str, done, timeout: float = 10.0) -> dict:
