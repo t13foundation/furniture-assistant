@@ -42,7 +42,7 @@ Shared rows are split across modules by quantity share (cut area for boards, len
 
 ## Client quote import
 
-Upload the client's quote workbook (`.xlsx`) on the *Pricing settings* page (`POST /api/projects/{id}/quote`, stored in the project as `quote.xlsx` + parsed `quote.json`, re-compared on every view; not `.xlsx` → 400, unreadable → 422). Every sheet is scanned row by row:
+Upload the client's quote workbook (`.xlsx`) on the *Pricing settings* page (`POST /api/projects/{id}/quote`, stored in the project as `quote.xlsx` + parsed `quote.json`, re-compared on every view; not `.xlsx` → 400, unreadable → 422). Every sheet is scanned row by row. A workbook with no priced rows is still saved and returns an empty comparison.
 
 - **Label** = the first text cell containing a cabinet code; **amount** = the last numeric cell in the row. Rows like `ZM 01.1 – zabudowa, 37650` are the expected shape.
 - Rows whose label starts with `RAZEM` (case-insensitive) are skipped as totals — only that prefix is filtered.
@@ -52,7 +52,7 @@ Upload the client's quote workbook (`.xlsx`) on the *Pricing settings* page (`PO
 
 ## Manual line assignments
 
-The comparison table lets you assign any quote line to one or more project modules, or mark it **Ignore** (for totals and non-cabinet rows). A manual assignment replaces code matching; clearing the selection restores automatic matching. Ignored lines are excluded from quote totals and suggested markup. Assignments are stored with the parsed lines in `quote.json`, keyed by line position and label, and retained when the same workbook is imported again. Changes are audited.
+The comparison table lets you assign any quote line to one or more project modules, or mark it **Ignore** (for totals and non-cabinet rows). A manual assignment replaces code matching; clearing the selection restores automatic matching. A module can be assigned to only one quote line; attempting to reuse it returns 409. Ignored lines are excluded from quote totals and suggested markup. Assignments are stored with the parsed lines in `quote.json`; re-import carries them over only when label and amount uniquely identify a row in both workbooks, so ambiguous duplicate rows lose their old decisions. Changes are audited.
 
 ## Comparison and suggested markup
 

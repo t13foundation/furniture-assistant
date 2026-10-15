@@ -115,8 +115,15 @@ def compare_quote(
             matched = []
             match = "ignored"
         elif line.manual_module_ids:
-            matched = [by_id[module_id] for module_id in line.manual_module_ids if module_id in by_id]
-            match = "manual"
+            valid_ids = [module_id for module_id in line.manual_module_ids if module_id in by_id]
+            line.manual_module_ids = valid_ids
+            if valid_ids:
+                matched = [by_id[module_id] for module_id in valid_ids]
+                match = "manual"
+            else:
+                matched = [model for code in line.codes for model in codes.get(code, [])]
+                matched = list({model.module.module_id: model for model in matched}.values())
+                match = "code" if matched else "none"
         else:
             matched = [model for code in line.codes for model in codes.get(code, [])]
             matched = list({model.module.module_id: model for model in matched}.values())

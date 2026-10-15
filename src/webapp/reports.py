@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from io import BytesIO
 from pathlib import Path
 from typing import Annotated
@@ -13,7 +14,7 @@ from src.furniture.pricing import Pricing, Valuation, load_pricing, save_pricing
 from src.furniture.quote import QuoteAssignment, QuoteComparison, QuoteLine, compare_quote, parse_quote
 from src.furniture.reports import MaterialSummary, ProcessSummary, material_summary, process_summary
 from src.furniture.schema import ModuleModel
-from src.webapp.store import ProjectNotFoundError
+from src.webapp.store import ProjectNotFoundError, _write_atomic
 
 router = APIRouter()
 
@@ -134,10 +135,15 @@ async def upload_quote(request: Request, project_id: str, file: Annotated[Upload
         except Exception as exc:
             raise HTTPException(422, f"Could not read quote workbook: {exc}") from exc
         previous = _load_quote(store.project_dir(project_id) / "quote.json")
-        for index, line in enumerate(lines):
-            if index < len(previous) and line.label == previous[index].label:
-                line.manual_module_ids = previous[index].manual_module_ids
-                line.ignored = previous[index].ignored
+        previous_keys = Counter((line.label, line.amount) for line in previous)
+        current_keys = Counter((line.label, line.amount) for line in lines)
+        previous_by_key = {(line.label, line.amount): line for line in previous}
+        for line in lines:
+            key = (line.label, line.amount)
+            if previous_keys[key] == current_keys[key] == 1:
+                prior = previous_by_key[key]
+                line.manual_module_ids = prior.manual_module_ids
+                line.ignored = prior.ignored
         store.quote_path(project_id).write_bytes(content)
         _save_quote(store.project_dir(project_id) / "quote.json", lines)
         store.append_audit(project_id, "quote_upload", getattr(request.state, "username", None), detail=file.filename)
@@ -154,8 +160,9 @@ def _load_quote(path: Path) -> list[QuoteLine]:
 
 
 def _save_quote(path: Path, lines: list[QuoteLine]) -> None:
-    path.write_text(
-        json.dumps({"lines": [line.model_dump(mode="json") for line in lines]}, ensure_ascii=False), encoding="utf-8"
+    _write_atomic(
+        path,
+        json.dumps({"lines": [line.model_dump(mode="json") for line in lines]}, ensure_ascii=False),
     )
 
 
@@ -179,6 +186,15 @@ def put_quote_assignment(request: Request, project_id: str, assignment: QuoteAss
         known_ids = {model.module.module_id for model in store.list_modules(project_id)}
         if unknown := set(assignment.module_ids) - known_ids:
             raise HTTPException(422, f"Unknown module ids: {', '.join(sorted(unknown))}")
+
+        assigned_elsewhere = {
+            module_id
+            for index, other in enumerate(lines)
+            if index != assignment.line_index and not other.ignored
+            for module_id in other.manual_module_ids
+        }
+        if overlap := assigned_elsewhere.intersection(assignment.module_ids):
+            raise HTTPException(409, f"Modules already assigned to another quote line: {', '.join(sorted(overlap))}")
         line.manual_module_ids = list(dict.fromkeys(assignment.module_ids))
         line.ignored = assignment.ignored
         _save_quote(path, lines)
@@ -205,8 +221,9 @@ def get_quote(request: Request, project_id: str) -> QuoteComparison:
             project_dir = store.project_dir(project_id)
         except ProjectNotFoundError:
             raise HTTPException(404, f"Unknown project {project_id}") from None
-        lines = _load_quote(project_dir / "quote.json")
-        if not lines:
+        path = project_dir / "quote.json"
+        lines = _load_quote(path)
+        if not path.exists():
             raise HTTPException(404, "No client quote uploaded")
     models, valuation = _valuation(request, project_id)
     return _compare(lines, models, valuation)

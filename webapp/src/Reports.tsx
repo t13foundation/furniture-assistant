@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, ApiError } from './api'
 import { ProjectSidebar, WorkspaceSidebar } from './ProjectView'
@@ -449,6 +449,10 @@ export function PricingSettings() {
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
   const [quoteFile, setQuoteFile] = useState<File | null>(null)
+  const currentProjectId = useRef(id)
+  currentProjectId.current = id
+  const assignmentSaving = useRef(false)
+  const [savingAssignment, setSavingAssignment] = useState(false)
   useEffect(() => {
     const endpoint = id ? `/api/projects/${encodeURIComponent(id)}/pricing` : '/api/pricing'
     void api<Pricing | ProjectPricing>(endpoint)
@@ -550,18 +554,26 @@ export function PricingSettings() {
     moduleIds: string[],
     ignored: boolean,
   ) => {
-    if (!id) return
+    if (!id || assignmentSaving.current) return
+    assignmentSaving.current = true
+    setSavingAssignment(true)
     setQuoteError('')
     try {
-      const value = await api<QuoteComparison>(`/api/projects/${encodeURIComponent(id)}/quote/assignments`, {
+      const projectId = id
+      const value = await api<QuoteComparison>(`/api/projects/${encodeURIComponent(projectId)}/quote/assignments`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ line_index: lineIndex, label, module_ids: moduleIds, ignored }),
       })
-      setQuoteState({ projectId: id, value })
+      if (currentProjectId.current === projectId) setQuoteState({ projectId, value })
     } catch (e) {
-      setQuoteError(e instanceof Error ? e.message : 'Could not save quote assignment')
+      if (currentProjectId.current === id)
+        setQuoteError(e instanceof Error ? e.message : 'Could not save quote assignment')
+    } finally {
+      assignmentSaving.current = false
+      setSavingAssignment(false)
     }
+
   }
   const revertPricing = async () => {
     if (!id) return
@@ -815,7 +827,7 @@ export function PricingSettings() {
                                 aria-label={`Modules for ${row.label}`}
                                 multiple
                                 value={selected}
-                                disabled={ignored || !detail?.modules.length}
+                                disabled={ignored || savingAssignment || !detail?.modules.length}
                                 onChange={(event) =>
                                   void saveQuoteAssignment(
                                     row.line_index,
@@ -837,6 +849,7 @@ export function PricingSettings() {
                                 type="checkbox"
                                 aria-label={`Ignore ${row.label}`}
                                 checked={ignored}
+                                disabled={savingAssignment}
                                 onChange={(event) =>
                                   void saveQuoteAssignment(
                                     row.line_index,
