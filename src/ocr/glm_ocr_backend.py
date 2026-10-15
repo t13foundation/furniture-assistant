@@ -95,7 +95,7 @@ class GlmOCRBackend:
     ) -> tuple[str, int]:
         """Use GLM-OCR SDK for local inference."""
         try:
-            parse = import_module("glmocr").__dict__["parse"]
+            parse = import_module("glmocr").parse
         except ImportError:
             msg = "glmocr package not installed. Run: pip install glmocr"
             raise ImportError(msg) from None
