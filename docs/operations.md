@@ -11,14 +11,13 @@ make web WEB_PORT=8010  # serve API + built frontend (default port 8000)
 
 `make web` runs `uv run uvicorn src.webapp.api:app --host 127.0.0.1 --port $(WEB_PORT)`. For production, drop `--reload` and run under a supervisor (example below). The backend serves the built frontend from `webapp/dist`; `make web-ui` (Vite on :5173) is for frontend development only.
 
-## Single process only
+## Process and host constraints
 
-The app must run as **exactly one uvicorn worker and one replica**:
+Multiple uvicorn workers on **one host** may share a projects root: project read-modify-write operations use a reentrant thread lock plus an exclusive `fcntl.flock` on each project's `.lock` file. Async job paths acquire and hold that lock in worker threads, not on the event loop. Job intent, owner (`host:pid`), per-run claim token and heartbeat are persisted in `job.json`; stale runners are fenced from later job/module writes.
 
-- `ProjectStore` serialises read-modify-write per project with in-process `threading.RLock` instances (`src/webapp/store.py`) — a second process would have its own lock set and races would corrupt module files.
-- Analysis and refine jobs are `asyncio.Task` objects in `app.state.tasks` (`src/webapp/api.py`) — a second process would not see them, and both would accept the same job.
+Multiple hosts are supported only when they use the same shared projects filesystem and that filesystem provides reliable cross-host `flock` semantics plus atomic rename. Separate local disks and filesystems that do not honor `flock` are not supported. Workspace pricing updates have their own lock. User-file changes are performed by the CLI, not by API workers.
 
-Do not pass `--workers N`, and do not scale to multiple replicas behind a load balancer. All durable state is plain files (see [Storage and backups](#storage-and-backups)), so this constraint is about locks and job tracking, not data location.
+Project creation uses exclusive directory creation to avoid replacing an existing project if generated identifiers collide.
 
 ## Model server
 
@@ -41,18 +40,16 @@ uv run python -m src.webapp.users list
 uv run python -m src.webapp.users remove alice
 ```
 
-Sessions: the `fa_session` cookie (HMAC-signed `username|expiry`), `httponly`, `samesite=lax`, lifetime 7 days. With auth disabled every request is attributed to `system` in the audit log.
+Sessions: the `fa_session` cookie (HMAC-signed `username|expiry`), `httponly`, `samesite=lax`, lifetime 7 days. The `secure` flag defaults on in production (`FA_ENV=production`) or when `FA_PUBLIC_URL` starts with `https://`. `FA_COOKIE_SECURE` explicitly overrides this default; it accepts exactly `true`/`false`, `yes`/`no`, or `1`/`0` without surrounding whitespace, case-insensitively. Any other value fails startup.
 
 ## Session secret
 
 Session cookies are signed with:
 
-1. `FA_SESSION_SECRET` if set — **required in production**: set an explicit value (e.g. `openssl rand -hex 32`) so restarts and redeployments keep sessions valid and the secret never lives in the repo tree.
-2. Otherwise an auto-generated `config/.session_secret` (32 random bytes, mode 0600, gitignored). Acceptable for a single local instance only: it lives inside the working tree and rotating it invalidates all sessions.
+1. `FA_SESSION_SECRET` if set. It is **required in production**; the app fails at startup without it. Supply it through a protected environment source such as a systemd credential or secret manager, not a `.env` file.
+2. Otherwise, in development only, an auto-generated `config/.session_secret` (32 random bytes, mode 0600, gitignored). This fallback lives inside the working tree and rotating it invalidates all sessions.
 
-## Reverse proxy and TLS
-
-Terminate TLS in front of the app (the server itself binds `127.0.0.1`). Once HTTPS is active, set `FA_COOKIE_SECURE=true` so the browser only sends the session cookie over HTTPS; the cookie keeps `httponly` and `samesite=lax` in all cases. The proxy should forward to the single uvicorn process (see above) and can use `GET /api/health` for probes.
+Production does not load `.env` and never creates the fallback file. Secret manager integration remains a deployment follow-up; provide the secret to the process environment until then.
 
 ## Health endpoint
 
@@ -62,22 +59,30 @@ Terminate TLS in front of the app (the server itself binds `127.0.0.1`). Once HT
 {"status": "ok", "model_base_url": "http://127.0.0.1:1234/v1", "projects_root_writable": true, "auth_enabled": false}
 ```
 
-`status` is `degraded` when the projects root cannot be written. Use it for load-balancer / systemd / container probes. Full endpoint reference: [API](api.md).
+`status` is `degraded` when the projects root cannot be written. This endpoint reports the configured model URL but does not actively contact the model server. Before accepting `analyze` or `refine`, the API separately calls `GET {FA_API_BASE}/models` with a 5-second timeout; connection failures, timeouts and non-2xx responses return `503` without queuing work or changing the module. Use `/api/health` for application/storage health and the analysis/refine response to verify model availability. Full endpoint reference: [API](api.md).
 
 ## Upload limits
 
-Enforced at project creation (`HTTP 413`):
+Enforced on project creation and quote import (`HTTP 413`). The total request body is
+rejected before multipart parsing when its `Content-Length` exceeds the cap; streamed
+requests without that header are bounded as chunks arrive. Per-file size is checked from
+the multipart parser's file metadata before file contents are read into application memory.
 
 | Env | Default | Check |
 |---|---|---|
+| `FA_MAX_REQUEST_MB` | `200` | total multipart request body, including form boundaries |
 | `FA_MAX_UPLOAD_MB` | `50` | per-file size |
 | `FA_MAX_FILES` | `50` | files per project |
 
-File types are restricted to drawing formats (PDF/PNG/JPG/TIFF/DWG/P3D); anything else is rejected with `400`.
+File types for project uploads are restricted to drawing formats (PDF/PNG/JPG/TIFF/DWG/P3D); anything else is rejected with `400`.
 
 ## Jobs across restarts
 
-Jobs live in memory only. On restart, a job left `queued`/`running` is reported as `error` ("Analysis interrupted (server restarted)") the next time the project is read, with an audit entry; the user re-runs the analysis from the UI. Already-built modules, history and overrides survive — only the in-flight run is lost.
+`job.json` stores job kind, owner (`host:pid`), per-run claim token, UTC heartbeat, status and per-page progress. A worker refreshes the heartbeat every five seconds; startup and job reads claim an analysis whose owner is dead or whose heartbeat is older than 30 seconds under the project lock. It audits `analyze_resume`, archives old module history, clears current modules and reruns the analysis from the beginning. This deliberately favors a clean, duplicate-free result over replaying a partially completed page; existing page records are not used to skip work.
+
+All hosts sharing the project filesystem must keep their clocks synchronized; keep clock skew well below the 30-second stale threshold (preferably under five seconds). UTC-aware heartbeats are stored for new jobs; legacy naive timestamps are interpreted in the server's local timezone, then converted to UTC.
+
+An interrupted refine is **not** retried automatically: startup or a job read marks its job and module refine status as `error`, adds a `refine_interrupted` audit entry, and the user can explicitly request the refine again. This avoids silently repeating a model call after its outcome may have been partially applied. Fresh jobs owned by another worker remain `running`, and concurrent analyze/refine requests receive HTTP 409.
 
 ## Project deletion and trash
 
@@ -111,6 +116,15 @@ that may still be needed for recovery. Each project directory contains `project.
 
 The app logs to stdout/stderr only (standard `logging` + uvicorn access logs); there are no log files and no structured logging yet (see [Production readiness](production-readiness.md)). Under systemd, journald captures everything: `journalctl -u furniture-assistant -f`. Legacy pipeline runs can additionally be traced to Langfuse (`FA_TRACING_ENABLED`, `docker-compose.dev.yml`).
 
+## Production checklist
+
+- Set `FA_ENV=production` in the process environment; values are case-insensitive (`development` or `production` only), and `.env` cannot select the mode. An invalid value fails startup. Production disables `.env` loading.
+- Supply `FA_SESSION_SECRET` through a protected process environment / credential source. Startup fails if it is missing.
+- Set `FA_USERS_FILE` to a protected users file with at least one account.
+- Set `FA_PUBLIC_URL=https://…` when the public endpoint uses HTTPS. This defaults the cookie to `Secure`; `FA_COOKIE_SECURE` can explicitly override it using an accepted boolean spelling.
+- Keep the app behind TLS termination, bind uvicorn to loopback, and run one worker / one replica.
+- Keep model/API keys out of the repository and `.env`; inject them through the service environment or credential mechanism.
+
 ## systemd unit example
 
 ```ini
@@ -121,12 +135,13 @@ After=network.target
 [Service]
 WorkingDirectory=/opt/furniture-assistant
 User=furniture
+Environment=FA_ENV=production
 Environment=FA_API_BASE=http://127.0.0.1:1234/v1
 Environment=FA_ORCHESTRATOR_MODEL=qwen/qwen3.6-35b-a3b
 Environment=FA_OUTPUT_DIR=/var/lib/furniture-assistant
 Environment=FA_USERS_FILE=/etc/furniture-assistant/users.yaml
 Environment=FA_SESSION_SECRET=change-me-openssl-rand-hex-32
-Environment=FA_COOKIE_SECURE=true
+Environment=FA_PUBLIC_URL=https://furniture.example.com
 ExecStart=/opt/furniture-assistant/.venv/bin/uvicorn src.webapp.api:app --host 127.0.0.1 --port 8000
 Restart=on-failure
 
@@ -134,4 +149,4 @@ Restart=on-failure
 WantedBy=multi-user.target
 ```
 
-One worker (no `--workers` flag), one replica. `OPENAI_API_KEY` may be supplied via an `EnvironmentFile=` instead of `.env` — in production prefer the environment over a `.env` file inside the repo tree.
+Replace the placeholder session secret with a protected credential source before deployment. Multiple workers are supported on one host. Multiple hosts require a shared projects filesystem with working cross-host `flock` and atomic rename semantics (see [Process and host constraints](#process-and-host-constraints)). `OPENAI_API_KEY` must also be injected through the service environment or credential mechanism; production never reads it from `.env`.

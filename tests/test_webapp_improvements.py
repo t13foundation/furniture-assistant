@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import io
+import os
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,8 +14,35 @@ from src.webapp import api
 from tests.conftest import sample_file
 
 
+def test_upload_request_limit_bounds_streamed_body_without_content_length(monkeypatch):
+    monkeypatch.setenv("FA_MAX_REQUEST_MB", "0")
+    middleware = api.UploadRequestLimitMiddleware(None)
+    messages = iter([{"type": "http.request", "body": b"x", "more_body": True}])
+    sent = []
+
+    async def receive():
+        return next(messages)
+
+    async def send(message):
+        sent.append(message)
+
+    async def downstream(scope, receive, send):
+        await receive()
+
+    middleware.app = downstream
+    asyncio.run(
+        middleware(
+            {"type": "http", "method": "POST", "path": "/api/projects", "headers": []},
+            receive,
+            send,
+        )
+    )
+    assert sent[0]["status"] == 413
+
+
 @pytest.fixture
 def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("FA_ENV", "development")
     monkeypatch.setenv("FA_OUTPUT_DIR", str(tmp_path / "output"))
     monkeypatch.delenv("FA_USERS_FILE", raising=False)
     with TestClient(api.app) as test_client:
@@ -51,6 +80,101 @@ def test_auth_disabled_and_login_protects_api(tmp_path, monkeypatch):
         assert client.get("/api/projects").status_code == 401
 
 
+def test_production_requires_session_secret_and_ignores_dotenv(tmp_path, monkeypatch):
+    from src.webapp import auth
+
+    monkeypatch.setenv("FA_ENV", "production")
+    monkeypatch.delenv("FA_SESSION_SECRET", raising=False)
+    monkeypatch.setattr(auth, "ROOT", tmp_path / "repo")
+    dotenv_path = tmp_path / ".env"
+    dotenv_path.write_text("FA_SESSION_SECRET=from-dotenv\n", encoding="utf-8")
+    monkeypatch.setattr(api, "DOTENV_PATH", dotenv_path)
+
+    with pytest.raises(RuntimeError, match="FA_SESSION_SECRET is required when FA_ENV=production"), TestClient(api.app):
+        pass
+
+    assert "FA_SESSION_SECRET" not in os.environ
+    assert not (tmp_path / "repo" / "config" / ".session_secret").exists()
+
+
+@pytest.mark.parametrize("environment", ["prod", "staging", "", "typo", " production "])
+def test_invalid_fa_environment_fails_startup(monkeypatch, environment):
+    monkeypatch.setenv("FA_ENV", environment)
+    with pytest.raises(RuntimeError, match="FA_ENV must be 'development' or 'production'"), TestClient(api.app):
+        pass
+
+
+@pytest.mark.parametrize(("environment", "expected"), [("DEVELOPMENT", False), ("Production", True)])
+def test_fa_environment_is_case_insensitive(tmp_path, monkeypatch, environment, expected):
+    from src.webapp import auth
+
+    monkeypatch.setenv("FA_ENV", environment)
+    monkeypatch.setenv("FA_SESSION_SECRET", "test-secret")
+    monkeypatch.setenv("FA_OUTPUT_DIR", str(tmp_path / "output"))
+    with TestClient(api.app):
+        assert auth.is_production() is expected
+
+
+def test_dotenv_cannot_select_runtime_mode(tmp_path, monkeypatch):
+    from src.webapp import auth
+
+    monkeypatch.delenv("FA_ENV", raising=False)
+    monkeypatch.delenv("FA_SESSION_SECRET", raising=False)
+    monkeypatch.setenv("FA_OUTPUT_DIR", str(tmp_path / "output"))
+    dotenv_path = tmp_path / ".env"
+    dotenv_path.write_text("FA_ENV=production\nFA_SESSION_SECRET=dotenv-secret\n", encoding="utf-8")
+    monkeypatch.setattr(api, "DOTENV_PATH", dotenv_path)
+
+    with TestClient(api.app):
+        assert not auth.is_production()
+        assert os.environ.get("FA_ENV") is None
+
+
+@pytest.mark.parametrize("value", ["tru", "", "maybe", "2", " true "])
+def test_invalid_cookie_secure_fails_startup(monkeypatch, value):
+    monkeypatch.setenv("FA_ENV", "development")
+    monkeypatch.setenv("FA_COOKIE_SECURE", value)
+    with pytest.raises(RuntimeError, match="FA_COOKIE_SECURE must be a boolean"), TestClient(api.app):
+        pass
+
+
+@pytest.mark.parametrize(
+    ("environment", "public_url", "explicit", "expected_secure"),
+    [
+        ("production", None, None, True),
+        ("development", "https://example.test", None, True),
+        ("development", "http://example.test", None, False),
+        ("production", "https://example.test", "false", False),
+        ("development", "https://example.test", "true", True),
+        ("development", None, "YES", True),
+        ("production", None, "0", False),
+    ],
+)
+def test_login_cookie_secure_precedence(tmp_path, monkeypatch, environment, public_url, explicit, expected_secure):
+    from src.webapp.auth import add_user
+
+    users_file = tmp_path / "users.yaml"
+    monkeypatch.setenv("FA_USERS_FILE", str(users_file))
+    monkeypatch.setenv("FA_ENV", environment)
+    monkeypatch.setenv("FA_SESSION_SECRET", "test-secret")
+    monkeypatch.setenv("FA_OUTPUT_DIR", str(tmp_path / "output"))
+    if public_url is None:
+        monkeypatch.delenv("FA_PUBLIC_URL", raising=False)
+    else:
+        monkeypatch.setenv("FA_PUBLIC_URL", public_url)
+    if explicit is None:
+        monkeypatch.delenv("FA_COOKIE_SECURE", raising=False)
+    else:
+        monkeypatch.setenv("FA_COOKIE_SECURE", explicit)
+    add_user("operator", "s3cret", users_file)
+
+    with TestClient(api.app) as client:
+        response = client.post("/api/auth/login", json={"username": "operator", "password": "s3cret"})
+
+    assert response.status_code == 200
+    assert ("secure" in response.headers["set-cookie"].lower()) is expected_secure
+
+
 def test_health_is_public_and_reports_model_url(tmp_path, monkeypatch):
     monkeypatch.setenv("FA_OUTPUT_DIR", str(tmp_path / "output"))
     monkeypatch.setenv("FA_USERS_FILE", str(tmp_path / "users.yaml"))
@@ -84,6 +208,101 @@ def test_upload_limits_return_413(client, monkeypatch):
     assert response.status_code == 413
     assert response.json()["detail"] == "At most 1 files per project"
     assert client.get("/api/projects").json() == []
+
+
+def test_analyze_rejects_unreachable_model_without_creating_job(client):
+    project_id = _create(client)
+    api.app.state.config.api.base_url = "http://127.0.0.1:1/v1"
+
+    response = client.post(f"/api/projects/{project_id}/analyze")
+
+    assert response.status_code == 503
+    assert "http://127.0.0.1:1/v1" in response.json()["detail"]
+    assert (api.app.state.store.project_dir(project_id) / "job.json").exists() is False
+
+
+def test_analyze_queues_when_model_probe_succeeds(client, monkeypatch):
+    import httpx
+
+    project_id = _create(client)
+    api.app.state.config.api.base_url = "http://model.example/v1"
+    requests = []
+    client_class = httpx.AsyncClient
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json={"object": "list", "data": []})
+
+    monkeypatch.setattr(
+        api.httpx,
+        "AsyncClient",
+        lambda **kwargs: client_class(transport=httpx.MockTransport(handler), **kwargs),
+    )
+    response = client.post(f"/api/projects/{project_id}/analyze")
+
+    assert response.status_code == 202
+    assert response.json() == {"status": "queued"}
+    assert requests[0].url == "http://model.example/v1/models"
+    assert requests[0].headers["authorization"] == "Bearer lm-studio"
+    assert (api.app.state.store.project_dir(project_id) / "job.json").exists()
+
+
+def test_refine_rejects_unreachable_model_without_changing_module_or_audit(client, two_door_module):
+    from src.furniture.schema import ModuleDraft
+
+    project_id = _create(client)
+    module_url = f"/api/projects/{project_id}/modules/TEST"
+    assert client.put(module_url, json=two_door_module.model_dump(mode="json")).status_code == 200
+    store = api.app.state.store
+    model = store.load_module(project_id, "TEST")
+    model.draft = ModuleDraft(
+        module_id="TEST",
+        title=two_door_module.title,
+        view_bbox=two_door_module.view_bbox,
+    )
+    store.save_module(project_id, model)
+    module_path = store.project_dir(project_id) / "modules" / "TEST.json"
+    audit_path = store.project_dir(project_id) / "audit.jsonl"
+    before_module = module_path.read_bytes()
+    before_audit = audit_path.read_bytes()
+    api.app.state.config.api.base_url = "http://127.0.0.1:1/v1"
+
+    response = client.post(f"{module_url}/refine")
+
+    assert response.status_code == 503
+    assert "http://127.0.0.1:1/v1" in response.json()["detail"]
+    assert module_path.read_bytes() == before_module
+    assert audit_path.read_bytes() == before_audit
+
+
+def test_total_upload_limit_rejects_before_project_creation(client, monkeypatch):
+    monkeypatch.setenv("FA_MAX_REQUEST_MB", "0")
+    response = client.post("/api/projects", files=[("files", ("cabinet.png", b"png", "image/png"))])
+    assert response.status_code == 413
+    assert response.json()["detail"] == "Request exceeds 0 MB"
+    root = api.app.state.store.root
+    assert not root.exists() or list(root.iterdir()) == []
+
+
+def test_quote_upload_obeys_request_limit(client, monkeypatch):
+    project_id = _create(client)
+    quote_file = {
+        "file": (
+            "quote.xlsx",
+            b"not a workbook",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    }
+    monkeypatch.setenv("FA_MAX_UPLOAD_MB", "0")
+    oversized_file = client.post(f"/api/projects/{project_id}/quote", files=quote_file)
+    assert oversized_file.status_code == 413
+    assert oversized_file.json()["detail"] == "File quote.xlsx exceeds 0 MB"
+
+    monkeypatch.delenv("FA_MAX_UPLOAD_MB")
+    monkeypatch.setenv("FA_MAX_REQUEST_MB", "0")
+    response = client.post(f"/api/projects/{project_id}/quote", files=quote_file)
+    assert response.status_code == 413
+    assert response.json()["detail"] == "Request exceeds 0 MB"
 
 
 def test_audit_history_restore_and_review(client, two_door_module):
