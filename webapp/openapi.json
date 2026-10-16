@@ -2635,7 +2635,58 @@
         ],
         "title": "Issue"
       },
-      "Job": {
+      "JobItem": {
+        "properties": {
+          "file_index": {
+            "type": "integer",
+            "title": "File Index"
+          },
+          "page_index": {
+            "type": "integer",
+            "title": "Page Index"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "done",
+              "skipped",
+              "error"
+            ],
+            "title": "Status",
+            "default": "pending"
+          },
+          "module_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Module Ids"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_index",
+          "page_index",
+          "status",
+          "module_ids",
+          "error"
+        ],
+        "title": "JobItem"
+      },
+      "JobResponse": {
         "properties": {
           "status": {
             "type": "string",
@@ -2690,7 +2741,7 @@
           }
         },
         "type": "object",
-        "title": "Job",
+        "title": "JobResponse",
         "required": [
           "status",
           "started_at",
@@ -2698,57 +2749,6 @@
           "items",
           "error"
         ]
-      },
-      "JobItem": {
-        "properties": {
-          "file_index": {
-            "type": "integer",
-            "title": "File Index"
-          },
-          "page_index": {
-            "type": "integer",
-            "title": "Page Index"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "running",
-              "done",
-              "skipped",
-              "error"
-            ],
-            "title": "Status",
-            "default": "pending"
-          },
-          "module_ids": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Module Ids"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          }
-        },
-        "type": "object",
-        "required": [
-          "file_index",
-          "page_index",
-          "status",
-          "module_ids",
-          "error"
-        ],
-        "title": "JobItem"
       },
       "LoginBody": {
         "properties": {
@@ -4161,7 +4161,7 @@
           "job": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Job"
+                "$ref": "#/components/schemas/JobResponse"
               },
               {
                 "type": "null"

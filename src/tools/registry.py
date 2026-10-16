@@ -13,13 +13,8 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic_ai import Agent, RunContext
 
-# Lazy import to avoid circular dependency: tools.registry <- agent
-# DrawingDeps is registered in globals() after module initialization
 if TYPE_CHECKING:
-    _DrawingDeps: Any = None
-else:
-    # Will be set by agent.py after both modules are loaded
-    _DrawingDeps = None
+    from src.pipeline.agent import DrawingDeps
 
 
 @dataclass
@@ -280,7 +275,11 @@ async def read_dimensions_tool(
     from src.document.regions import Region
     from src.tools.dimensions import read_dimensions
 
-    region = Region(x_min, y_min, x_max, y_max) if all(v is not None for v in [x_min, y_min, x_max, y_max]) else None
+    region = (
+        Region(x_min, y_min, x_max, y_max)
+        if x_min is not None and y_min is not None and x_max is not None and y_max is not None
+        else None
+    )
     return await read_dimensions(
         ctx.deps.loader,
         region,
@@ -305,7 +304,11 @@ async def search_text_tool(
     from src.document.regions import Region
     from src.tools.text_search import search_text
 
-    region = Region(x_min, y_min, x_max, y_max) if all(v is not None for v in [x_min, y_min, x_max, y_max]) else None
+    region = (
+        Region(x_min, y_min, x_max, y_max)
+        if x_min is not None and y_min is not None and x_max is not None and y_max is not None
+        else None
+    )
     return await search_text(
         ctx.deps.loader,
         keywords,
@@ -362,7 +365,7 @@ VALIDATION_TOOLS: list[ToolDef] = [
 ]
 
 
-def register_tools(agent: Agent, tool_defs: list[ToolDef]) -> None:
+def register_tools(agent: Agent[Any, Any], tool_defs: list[ToolDef]) -> None:
     """Register a list of tool definitions on an agent.
 
     Each tool is wrapped to check the DrawingDeps.tool_cache before

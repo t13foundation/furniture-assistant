@@ -198,10 +198,10 @@ def _write_comparison_sheet(
             if result:
                 values = []
                 confidences = []
-                for fn in COMPARISON_FIELDS:
-                    f = getattr(result, fn, None)
-                    values.append(f.value or "")
-                    confidences.append(f.confidence.value if f else "")
+                for field_name in COMPARISON_FIELDS:
+                    field = getattr(result, field_name, None)
+                    values.append((field.value or "") if field is not None else "")
+                    confidences.append(field.confidence.value if field is not None else "")
                 row.append(" | ".join(values))
                 row.append(" | ".join(confidences))
             else:
@@ -222,14 +222,15 @@ def _write_confidence_sheet(
     for cell in ws[1]:
         cell.fill = HEADER_FILL
         cell.font = HEADER_FONT
-
     for field_name in COMPARISON_FIELDS:
         row = [field_name]
         for model in models:
             results = results_by_model[model]
-            confidences = [
-                getattr(r, field_name, None).confidence.value for r in results if getattr(r, field_name, None)
-            ]
+            confidences = []
+            for result in results:
+                field = getattr(result, field_name, None)
+                if field is not None:
+                    confidences.append(field.confidence.value)
             if confidences:
                 high = confidences.count("HIGH") / len(confidences)
                 row.append(

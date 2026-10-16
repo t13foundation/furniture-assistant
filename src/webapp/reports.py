@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import fcntl
 import json
+import os
+import threading
+from collections.abc import Generator
+from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path
 from typing import Annotated
@@ -14,6 +19,22 @@ from src.furniture.quote import QuoteComparison, QuoteLine, compare_quote, parse
 from src.furniture.reports import MaterialSummary, ProcessSummary, material_summary, process_summary
 from src.furniture.schema import ModuleModel
 from src.webapp.store import ProjectNotFoundError
+from src.webapp.upload_limits import check_file_size
+
+_PRICING_THREAD_LOCK = threading.RLock()
+
+
+@contextmanager
+def _workspace_pricing_lock() -> Generator[None]:
+    lock_path = _pricing_path().with_name(".pricing.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with _PRICING_THREAD_LOCK, lock_path.open("a") as stream:
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+
 
 router = APIRouter()
 
@@ -25,11 +46,11 @@ class ProjectPricing(BaseModel):
 
 def _project_pricing(request: Request, project_id: str) -> tuple[Pricing, bool]:
     store = request.app.state.store
+    try:
+        project_dir = store.project_dir(project_id)
+    except ProjectNotFoundError:
+        raise HTTPException(404, f"Unknown project {project_id}") from None
     with store.lock(project_id):
-        try:
-            project_dir = store.project_dir(project_id)
-        except ProjectNotFoundError:
-            raise HTTPException(404, f"Unknown project {project_id}") from None
         path = project_dir / "pricing.yaml"
         return (load_pricing(path), False) if path.exists() else (load_pricing(_pricing_path()), True)
 
@@ -71,8 +92,10 @@ def get_valuation(request: Request, project_id: str) -> Valuation:
 @router.get("/api/projects/{project_id}/export/valuation.xlsx")
 def export_valuation(request: Request, project_id: str) -> FileResponse:
     models, valuation = _valuation(request, project_id)
-    output = request.app.state.store.exports_dir(project_id) / "valuation.xlsx"
-    write_valuation_xlsx(valuation, models, output)
+    store = request.app.state.store
+    with store.lock(project_id):
+        output = store.exports_dir(project_id) / "valuation.xlsx"
+        write_valuation_xlsx(valuation, models, output)
     return FileResponse(
         output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=output.name
     )
@@ -127,6 +150,8 @@ async def upload_quote(request: Request, project_id: str, file: Annotated[Upload
         raise HTTPException(404, f"Unknown project {project_id}") from None
     if Path(file.filename or "").suffix.lower() != ".xlsx":
         raise HTTPException(400, "Client quote must be an .xlsx file")
+    max_mb = int(os.environ.get("FA_MAX_UPLOAD_MB", "50").strip() or 50)
+    await check_file_size(file, max_mb)
     content = await file.read()
     with store.lock(project_id):
         try:
@@ -150,12 +175,12 @@ def _compare(lines: list[QuoteLine], models: list[ModuleModel], valuation: Valua
 @router.get("/api/projects/{project_id}/quote", response_model=QuoteComparison)
 def get_quote(request: Request, project_id: str) -> QuoteComparison:
     store = request.app.state.store
+    try:
+        project_dir = store.project_dir(project_id)
+    except ProjectNotFoundError:
+        raise HTTPException(404, f"Unknown project {project_id}") from None
     with store.lock(project_id):
-        try:
-            store.project_dir(project_id)
-            path = store.project_dir(project_id) / "quote.json"
-        except ProjectNotFoundError:
-            raise HTTPException(404, f"Unknown project {project_id}") from None
+        path = project_dir / "quote.json"
         if not path.exists():
             raise HTTPException(404, "No client quote uploaded")
         lines = [QuoteLine.model_validate(row) for row in json.loads(path.read_text(encoding="utf-8"))]
@@ -165,9 +190,11 @@ def get_quote(request: Request, project_id: str) -> QuoteComparison:
 
 @router.get("/api/pricing", response_model=Pricing)
 def get_pricing() -> Pricing:
-    return load_pricing(_pricing_path())
+    with _workspace_pricing_lock():
+        return load_pricing(_pricing_path())
 
 
 @router.put("/api/pricing", response_model=Pricing)
 def put_pricing(pricing: Pricing) -> Pricing:
-    return save_pricing(pricing, _pricing_path())
+    with _workspace_pricing_lock():
+        return save_pricing(pricing, _pricing_path())

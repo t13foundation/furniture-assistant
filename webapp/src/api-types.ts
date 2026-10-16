@@ -916,23 +916,6 @@ export interface components {
             /** Cell Ids */
             cell_ids: string[];
         };
-        /** Job */
-        Job: {
-            /**
-             * Status
-             * @default queued
-             * @enum {string}
-             */
-            status: "queued" | "running" | "done" | "error";
-            /** Started At */
-            started_at: string | null;
-            /** Finished At */
-            finished_at: string | null;
-            /** Items */
-            items: components["schemas"]["JobItem"][];
-            /** Error */
-            error: string | null;
-        };
         /** JobItem */
         JobItem: {
             /** File Index */
@@ -947,6 +930,23 @@ export interface components {
             status: "pending" | "running" | "done" | "skipped" | "error";
             /** Module Ids */
             module_ids: string[];
+            /** Error */
+            error: string | null;
+        };
+        /** JobResponse */
+        JobResponse: {
+            /**
+             * Status
+             * @default queued
+             * @enum {string}
+             */
+            status: "queued" | "running" | "done" | "error";
+            /** Started At */
+            started_at: string | null;
+            /** Finished At */
+            finished_at: string | null;
+            /** Items */
+            items: components["schemas"]["JobItem"][];
             /** Error */
             error: string | null;
         };
@@ -1374,7 +1374,7 @@ export interface components {
         /** ProjectDetailResponse */
         ProjectDetailResponse: {
             project: components["schemas"]["Project"];
-            job: components["schemas"]["Job"] | null;
+            job: components["schemas"]["JobResponse"] | null;
             /** Modules */
             modules: components["schemas"]["ModuleListEntry"][];
         };
