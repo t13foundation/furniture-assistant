@@ -1,8 +1,17 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Link, NavLink, useLocation, useParams } from 'react-router-dom'
+import { Link, NavLink, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api } from './api'
 import { useAuth } from './auth'
-import type { ModuleModel, ProjectDetail, ProjectSummary } from './types'
+import type { Job, ModuleModel, ProjectDetail, ProjectSummary } from './types'
+
+function UsageSummary({ title, usage }: { title: string; usage: Job['usage'] }) {
+  return (
+    <span className="job-usage">
+      {title}: {usage.requests} requests · {usage.input_tokens} input / {usage.output_tokens} output tokens
+      {usage.estimated_cost !== null && ` · estimated cost ${usage.estimated_cost.toFixed(4)}`}
+    </span>
+  )
+}
 
 const ModuleView = lazy(() => import('./ModuleView'))
 
@@ -180,6 +189,12 @@ export default function ProjectView() {
             <span className="spinner" /> Analysis running · {completed} of {total} pages processed
           </div>
         )}
+        {detail && (
+          <div className="job-banner">
+            <UsageSummary title="Project total" usage={detail.usage} />
+            {detail.job && <UsageSummary title="This analysis" usage={detail.job.usage} />}
+          </div>
+        )}
         {detail?.job?.status === 'error' && (
           <div className="error-banner">Analysis failed: {detail.job.error ?? 'unknown error'}</div>
         )}
@@ -232,7 +247,36 @@ export function ProjectSidebar({
 }) {
   const [open, setOpen] = useState(false)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [editingName, setEditingName] = useState(false)
+  const [projectName, setProjectName] = useState<{ id: string; name: string } | null>(null)
+  const [actionError, setActionError] = useState('')
+  const navigate = useNavigate()
   const { auth, logout } = useAuth()
+  const visibleName = projectName?.id === id ? projectName.name : detail?.project.name
+  const saveProjectName = async () => {
+    if (!detail) return
+    try {
+      const updated = await api<ProjectDetail['project']>(`/api/projects/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: projectName?.id === id ? projectName.name : detail.project.name }),
+      })
+      setProjectName({ id, name: updated.name })
+      setEditingName(false)
+      setActionError('')
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Could not rename project')
+    }
+  }
+  const removeProject = async () => {
+    if (!window.confirm(`Move "${detail?.project.name}" to trash?`)) return
+    try {
+      await api(`/api/projects/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      navigate('/')
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Could not delete project')
+    }
+  }
   const completed =
     detail?.job?.items.filter((item) => ['done', 'skipped', 'error'].includes(item.status)).length ?? 0
   const total = detail?.job?.items.length ?? 0
@@ -265,7 +309,50 @@ export function ProjectSidebar({
         </Link>
         <div className="sidebar-project">
           <div className="eyebrow">PROJECT</div>
-          <strong>{detail?.project.name || 'Loading…'}</strong>
+          {editingName ? (
+            <div className="project-name-edit">
+              <input
+                aria-label="Project name"
+                maxLength={120}
+                value={projectName?.id === id ? projectName.name : detail?.project.name ?? ''}
+                onChange={(event) => setProjectName({ id, name: event.target.value })}
+              />
+              <button className="button primary" onClick={() => void saveProjectName()}>
+                Save project name
+              </button>
+              <button
+                className="button secondary"
+                onClick={() => {
+                  setProjectName(null)
+                  setEditingName(false)
+                }}
+              >
+                Cancel rename
+              </button>
+            </div>
+          ) : (
+            <>
+              <strong>{visibleName || 'Loading…'}</strong>
+              {detail && (
+                <div className="project-lifecycle-actions">
+                  <button
+                    className="button secondary"
+                    aria-label="Rename project"
+                    onClick={() => {
+                      setProjectName({ id, name: visibleName ?? '' })
+                      setEditingName(true)
+                    }}
+                  >
+                    Rename
+                  </button>
+                  <button className="button danger" onClick={() => void removeProject()}>
+                    Delete project
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+          {actionError && <p className="error-message">{actionError}</p>}
         </div>
         {detail?.job && ['running', 'queued'].includes(detail.job.status) && (
           <div className="progress-block">
