@@ -105,7 +105,8 @@ All state is plain files under `<FA_OUTPUT_DIR>/webapp/` (default `results/webap
 This includes the active `projects/` root and `trash/`, which contains deleted projects
 that may still be needed for recovery. Each project directory contains `project.json`,
 `uploads/`, `pages/` (cached PNG renders), `modules/` with `history/` (versions,
-`history-archive-*` after a re-analysis), `audit.jsonl`, `job.json`, `pricing.yaml`,
+`history-archive-*` after a re-analysis), `audit.jsonl`, `job.json` (latest job and its
+model usage), `usage.json` (cumulative model usage), `pricing.yaml`,
 `quote.xlsx`/`quote.json` and `exports/`.
 
 - **Back up `<FA_OUTPUT_DIR>/webapp/`** — back up both `projects/` and `trash/` together so trashed projects are not lost during a restore. Configuration (`config/`), `users.yaml` and the session secret are managed separately.

@@ -59,6 +59,8 @@ from src.webapp.store import (
     Project,
     ProjectNotFoundError,
     ProjectStore,
+    UsageBreakdown,
+    UsageTotals,
     now_iso,
 )
 from src.webapp.upload_limits import check_file_size
@@ -133,6 +135,8 @@ class JobResponse(BaseModel):
     finished_at: str | None = None
     items: list[JobItem] = Field(default_factory=list)
     error: str | None = None
+    usage: UsageTotals = Field(default_factory=UsageTotals)
+    usage_breakdown: list[UsageBreakdown] = Field(default_factory=list)
 
 
 class AuthMeResponse(BaseModel):
@@ -173,6 +177,7 @@ class ModuleListEntry(BaseModel):
 class ProjectDetailResponse(BaseModel):
     project: Project
     job: JobResponse | None
+    usage: UsageTotals
     modules: list[ModuleListEntry]
 
 
@@ -502,13 +507,29 @@ def _running(request: Request, project_id: str) -> bool:
     return _job_is_running(request, project_id)
 
 
+def _usage_at_current_rates(request: Request, usage: UsageTotals) -> UsageTotals:
+    rates = request.app.state.config.models
+    return usage.with_estimated_cost(rates.cost_per_million_input, rates.cost_per_million_output)
+
+
 async def _job(request: Request, project_id: str) -> Job | None:
-    """Return the durable job record, recovering stale analysis before returning it."""
+    """Return the durable job record (recovering stale analysis first) with usage priced at the current rates."""
     store = _store(request)
     claim_token = await asyncio.to_thread(_recover_project_job, store, project_id)
     if claim_token:
         _start_analysis(request.app, project_id, claim_token)
-    return await asyncio.to_thread(store.load_job, project_id)
+    job = await asyncio.to_thread(store.load_job, project_id)
+    if job is None:
+        return None
+    return job.model_copy(
+        update={
+            "usage": _usage_at_current_rates(request, job.usage),
+            "usage_breakdown": [
+                row.model_copy(update={"usage": _usage_at_current_rates(request, row.usage)})
+                for row in job.usage_breakdown
+            ],
+        }
+    )
 
 
 @app.get("/api/projects", response_model=list[ProjectListResponse])
@@ -667,6 +688,7 @@ async def get_project(request: Request, project_id: str) -> ProjectDetailRespons
     return ProjectDetailResponse(
         project=store.load_project(project_id),
         job=JobResponse(**job.model_dump()) if job else None,
+        usage=_usage_at_current_rates(request, store.load_usage(project_id)),
         modules=modules,
     )
 

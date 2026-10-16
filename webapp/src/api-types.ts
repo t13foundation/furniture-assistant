@@ -951,6 +951,9 @@ export interface components {
             items: components["schemas"]["JobItem"][];
             /** Error */
             error: string | null;
+            usage: components["schemas"]["UsageTotals"];
+            /** Usage Breakdown */
+            usage_breakdown: components["schemas"]["UsageBreakdown"][];
         };
         /** LoginBody */
         LoginBody: {
@@ -1377,6 +1380,7 @@ export interface components {
         ProjectDetailResponse: {
             project: components["schemas"]["Project"];
             job: components["schemas"]["JobResponse"] | null;
+            usage: components["schemas"]["UsageTotals"];
             /** Modules */
             modules: components["schemas"]["ModuleListEntry"][];
         };
@@ -1546,6 +1550,36 @@ export interface components {
              * @default
              */
             reason: string;
+        };
+        /** UsageBreakdown */
+        UsageBreakdown: {
+            /** File Name */
+            file_name: string;
+            /** Page Index */
+            page_index: number;
+            /** Module Id */
+            module_id: string | null;
+            usage: components["schemas"]["UsageTotals"];
+        };
+        /** UsageTotals */
+        UsageTotals: {
+            /**
+             * Requests
+             * @default 0
+             */
+            requests: number;
+            /**
+             * Input Tokens
+             * @default 0
+             */
+            input_tokens: number;
+            /**
+             * Output Tokens
+             * @default 0
+             */
+            output_tokens: number;
+            /** Estimated Cost */
+            estimated_cost: number | null;
         };
         /** ValidationError */
         ValidationError: {

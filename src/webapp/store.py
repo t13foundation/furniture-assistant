@@ -46,6 +46,32 @@ class Project(BaseModel):
     files: list[ProjectFile] = Field(default_factory=list)
 
 
+class UsageTotals(BaseModel):
+    requests: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    estimated_cost: float | None = None
+
+    def with_estimated_cost(
+        self, cost_per_million_input: float | None, cost_per_million_output: float | None
+    ) -> UsageTotals:
+        if cost_per_million_input is None or cost_per_million_output is None:
+            cost = None
+        else:
+            cost = round(
+                (self.input_tokens * cost_per_million_input + self.output_tokens * cost_per_million_output) / 1_000_000,
+                8,
+            )
+        return self.model_copy(update={"estimated_cost": cost})
+
+
+class UsageBreakdown(BaseModel):
+    file_name: str
+    page_index: int
+    module_id: str | None = None
+    usage: UsageTotals
+
+
 class JobItem(BaseModel):
     file_index: int
     page_index: int
@@ -60,6 +86,8 @@ class Job(BaseModel):
     finished_at: str | None = None
     items: list[JobItem] = Field(default_factory=list)
     error: str | None = None
+    usage: UsageTotals = Field(default_factory=UsageTotals)
+    usage_breakdown: list[UsageBreakdown] = Field(default_factory=list)
     kind: Literal["analysis", "refine"] = "analysis"
     refine_module_id: str | None = None
     owner: str | None = None
@@ -418,3 +446,52 @@ class ProjectStore:
     def load_job(self, project_id: str) -> Job | None:
         path = self.project_dir(project_id) / "job.json"
         return Job.model_validate_json(path.read_text(encoding="utf-8")) if path.exists() else None
+
+    def load_usage(self, project_id: str) -> UsageTotals:
+        path = self.project_dir(project_id) / "usage.json"
+        return UsageTotals.model_validate_json(path.read_text(encoding="utf-8")) if path.exists() else UsageTotals()
+
+    def record_usage(
+        self,
+        project_id: str,
+        usage: UsageTotals,
+        *,
+        job: Job | None = None,
+        file_name: str,
+        page_index: int,
+        module_id: str | None = None,
+        claim_token: str | None = None,
+    ) -> None:
+        """Persist token totals under the project lock, including an optional job breakdown.
+
+        With ``claim_token``, a superseded run (another worker took the job over) raises instead of writing.
+        """
+        with self.lock(project_id):
+            self._check_job_claim(project_id, claim_token)
+
+            def add(total: UsageTotals, increment: UsageTotals) -> UsageTotals:
+                return UsageTotals(
+                    requests=total.requests + increment.requests,
+                    input_tokens=total.input_tokens + increment.input_tokens,
+                    output_tokens=total.output_tokens + increment.output_tokens,
+                )
+
+            total = add(self.load_usage(project_id), usage)
+            _write_atomic(self.project_dir(project_id) / "usage.json", total.model_dump_json(indent=2))
+            if job is not None:
+                job.usage = add(job.usage, usage)
+                entry = next(
+                    (
+                        row
+                        for row in job.usage_breakdown
+                        if row.file_name == file_name and row.page_index == page_index and row.module_id == module_id
+                    ),
+                    None,
+                )
+                if entry is None:
+                    job.usage_breakdown.append(
+                        UsageBreakdown(file_name=file_name, page_index=page_index, module_id=module_id, usage=usage)
+                    )
+                else:
+                    entry.usage = add(entry.usage, usage)
+                self.save_job(project_id, job, claim_token)

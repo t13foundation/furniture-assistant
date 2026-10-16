@@ -37,6 +37,8 @@ test('upload a drawing and get an analysed 3D module', async ({ page }) => {
   await expect(page).toHaveURL(/#\/p\/[^/]+$/)
   projectUrl = page.url()
   await expect(page.getByRole('link', { name: /Szafa testowa/ }).first()).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByText(/Project total: \d+ requests · \d+ input \/ \d+ output tokens/)).toBeVisible()
+  await expect(page.getByText(/This analysis: \d+ requests · \d+ input \/ \d+ output tokens/)).toBeVisible()
 
   await page
     .getByRole('link', { name: /Szafa testowa/ })

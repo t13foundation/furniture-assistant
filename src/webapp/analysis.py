@@ -32,7 +32,7 @@ from src.furniture.resolve import (
 from src.furniture.rules import ConstructionRules
 from src.furniture.schema import DimensionMark, FurnitureModule, ModuleDraft, ModuleModel
 from src.schema.enums import DrawingType
-from src.webapp.store import JobItem, JobSupersededError, ProjectStore, now_iso
+from src.webapp.store import Job, JobItem, JobSupersededError, ProjectStore, UsageTotals, now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +104,37 @@ def rebuild(module: FurnitureModule, rules: ConstructionRules, **state) -> Modul
     return build_module(module, rules).model_copy(update=state)
 
 
+def _usage_callback(
+    store: ProjectStore,
+    project_id: str,
+    file_name: str,
+    page_index: int,
+    module_id: str | None = None,
+    job: Job | None = None,
+    claim_token: str | None = None,
+):
+    """Usage recorder for one model call: persisted off the event loop, fenced by the run's claim."""
+
+    async def record(raw_usage: object) -> None:
+        usage = UsageTotals(
+            requests=int(getattr(raw_usage, "requests", 0) or 0),
+            input_tokens=int(getattr(raw_usage, "input_tokens", 0) or 0),
+            output_tokens=int(getattr(raw_usage, "output_tokens", 0) or 0),
+        )
+        await asyncio.to_thread(
+            store.record_usage,
+            project_id,
+            usage,
+            job=job,
+            file_name=file_name,
+            page_index=page_index,
+            module_id=module_id,
+            claim_token=claim_token,
+        )
+
+    return record
+
+
 def apply_refined(
     latest: ModuleModel, new_draft: ModuleDraft | None, rules: ConstructionRules, error: str | None = None
 ) -> ModuleModel:
@@ -150,15 +181,27 @@ async def refine_and_save(
     png_path: Path,
     rules: ConstructionRules,
     claim_token: str,
+    job: Job | None = None,
 ) -> None:
-    """Ask the model again and merge the result only while this run owns the project claim."""
+    """Ask the model again and merge the result only while this run owns the project claim.
+
+    Model usage is added to the project total and, when given, to ``job`` (the analysis or refine job).
+    """
     model = await asyncio.to_thread(store.load_module, project_id, module_id)
     new_draft, error = None, None
     try:
         if model.draft is None:
             raise ValueError("Module has no model interpretation to refine")
         image_png = await asyncio.to_thread(_region_image, png_path, model.module)
-        new_draft = await refine_draft(agent, image_png, model.module, model.draft)
+        new_draft = await refine_draft(
+            agent,
+            image_png,
+            model.module,
+            model.draft,
+            on_usage=_usage_callback(
+                store, project_id, model.module.file_name, model.module.page_index, module_id, job, claim_token
+            ),
+        )
     except Exception as exc:
         logger.exception("Refining %s/%s failed", project_id, module_id)
         error = f"{type(exc).__name__}: {exc}"
@@ -225,7 +268,8 @@ async def refine_stored_module(
 
         await _fenced_async(store, project_id, claim_token, mark_refine_error)
         return
-    await refine_and_save(store, project_id, module_id, agent, png_path, rules, claim_token)
+    refine_job = await asyncio.to_thread(store.load_job, project_id)
+    await refine_and_save(store, project_id, module_id, agent, png_path, rules, claim_token, refine_job)
     await _fenced_async(store, project_id, claim_token, lambda: recheck_project(store, project_id, rules, claim_token))
 
 
@@ -279,7 +323,17 @@ async def run_analysis(
             image_png = await asyncio.to_thread(_agent_image, png_path, marks)
             page_units = marks[0].unit if marks else "cm"
             try:
-                draft = await interpret_page(agent, image_png, marks, chains, runs, page_units)
+                draft = await interpret_page(
+                    agent,
+                    image_png,
+                    marks,
+                    chains,
+                    runs,
+                    page_units,
+                    on_usage=_usage_callback(
+                        store, project_id, file.name, item.page_index, job=job, claim_token=claim_token
+                    ),
+                )
             except Exception as exc:
                 if not agent_succeeded:
                     # No model response means the run cannot proceed (server down or model unloaded).
@@ -303,8 +357,9 @@ async def run_analysis(
 
                 await _fenced_async(store, project_id, claim_token, save_module)
                 if needs_refine(module):
+                    # Feedback loop: one focused model re-run on what the first pass left open.
                     await refine_and_save(
-                        store, project_id, module.module_id, refine_agent, png_path, rules, claim_token
+                        store, project_id, module.module_id, refine_agent, png_path, rules, claim_token, job
                     )
                 item.module_ids.append(module.module_id)
             item.status = "done"

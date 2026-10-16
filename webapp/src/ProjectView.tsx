@@ -3,7 +3,16 @@ import { Link, NavLink, useLocation, useNavigate, useParams } from 'react-router
 import { api } from './api'
 import ModuleView from './ModuleView'
 import { useAuth } from './auth'
-import type { ModuleModel, ProjectDetail, ProjectSummary } from './types'
+import type { Job, ModuleModel, ProjectDetail, ProjectSummary } from './types'
+
+function UsageSummary({ title, usage }: { title: string; usage: Job['usage'] }) {
+  return (
+    <span className="job-usage">
+      {title}: {usage.requests} requests · {usage.input_tokens} input / {usage.output_tokens} output tokens
+      {usage.estimated_cost !== null && ` · estimated cost ${usage.estimated_cost.toFixed(4)}`}
+    </span>
+  )
+}
 
 export function ProjectList() {
   const [projects, setProjects] = useState<ProjectSummary[]>([])
@@ -179,6 +188,12 @@ export default function ProjectView() {
         {detail?.job && ['running', 'queued'].includes(detail.job.status) && (
           <div className="job-banner">
             <span className="spinner" /> Analysis running · {completed} of {total} pages processed
+          </div>
+        )}
+        {detail && (
+          <div className="job-banner">
+            <UsageSummary title="Project total" usage={detail.usage} />
+            {detail.job && <UsageSummary title="This analysis" usage={detail.job.usage} />}
           </div>
         )}
         {detail?.job?.status === 'error' && (
