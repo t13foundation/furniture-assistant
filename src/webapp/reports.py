@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from io import BytesIO
 from pathlib import Path
 from typing import Annotated
@@ -14,6 +15,7 @@ from src.furniture.quote import QuoteComparison, QuoteLine, compare_quote, parse
 from src.furniture.reports import MaterialSummary, ProcessSummary, material_summary, process_summary
 from src.furniture.schema import ModuleModel
 from src.webapp.store import ProjectNotFoundError
+from src.webapp.upload_limits import check_file_size
 
 router = APIRouter()
 
@@ -127,6 +129,8 @@ async def upload_quote(request: Request, project_id: str, file: Annotated[Upload
         raise HTTPException(404, f"Unknown project {project_id}") from None
     if Path(file.filename or "").suffix.lower() != ".xlsx":
         raise HTTPException(400, "Client quote must be an .xlsx file")
+    max_mb = int(os.environ.get("FA_MAX_UPLOAD_MB", "50").strip() or 50)
+    await check_file_size(file, max_mb)
     content = await file.read()
     with store.lock(project_id):
         try:

@@ -66,14 +66,18 @@ Terminate TLS in front of the app (the server itself binds `127.0.0.1`). Once HT
 
 ## Upload limits
 
-Enforced at project creation (`HTTP 413`):
+Enforced on project creation and quote import (`HTTP 413`). The total request body is
+rejected before multipart parsing when its `Content-Length` exceeds the cap; streamed
+requests without that header are bounded as chunks arrive. Per-file size is checked from
+the multipart parser's file metadata before file contents are read into application memory.
 
 | Env | Default | Check |
 |---|---|---|
+| `FA_MAX_REQUEST_MB` | `200` | total multipart request body, including form boundaries |
 | `FA_MAX_UPLOAD_MB` | `50` | per-file size |
 | `FA_MAX_FILES` | `50` | files per project |
 
-File types are restricted to drawing formats (PDF/PNG/JPG/TIFF/DWG/P3D); anything else is rejected with `400`.
+File types for project uploads are restricted to drawing formats (PDF/PNG/JPG/TIFF/DWG/P3D); anything else is rejected with `400`.
 
 ## Jobs across restarts
 
