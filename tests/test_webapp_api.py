@@ -253,11 +253,14 @@ def test_feedback_loop_reruns_model_then_takes_user_answers(client, monkeypatch)
         ],
     )
     refine_calls: list[list[str]] = []
+    from types import SimpleNamespace
 
-    async def interpret(*_args, **_kwargs):
+    async def interpret(*_args, **kwargs):
+        await kwargs["on_usage"](SimpleNamespace(requests=1, input_tokens=100, output_tokens=20))
         return first
 
-    async def refine(_agent, _image, module, draft):
+    async def refine(_agent, _image, module, draft, **kwargs):
+        await kwargs["on_usage"](SimpleNamespace(requests=1, input_tokens=30, output_tokens=10))
         refine_calls.append([q.id for q in module.questions])
         # The model finds the materials but still not the width.
         materials = [MaterialSpec(key="M1", name="Płyta biała", kind="laminated_board")]
@@ -270,13 +273,33 @@ def test_feedback_loop_reruns_model_then_takes_user_answers(client, monkeypatch)
     monkeypatch.setattr(analysis, "interpret_page", interpret)
     monkeypatch.setattr(analysis, "refine_draft", refine)
 
-    project_id = _create(client)
+    uploaded = client.post(
+        "/api/projects",
+        files=[
+            ("files", ("drawing-1.png", _png(), "image/png")),
+            ("files", ("drawing-2.png", _png(), "image/png")),
+        ],
+    )
+    project_id = uploaded.json()["id"]
+    api.app.state.config.models.cost_per_million_input = 2.0
+    api.app.state.config.models.cost_per_million_output = 4.0
     assert client.post(f"/api/projects/{project_id}/analyze").status_code == 202
-    _wait_for(client, f"/api/projects/{project_id}", lambda body: body["job"]["status"] == "done")
+    analyzed = _wait_for(client, f"/api/projects/{project_id}", lambda body: body["job"]["status"] == "done")
+    assert analyzed["job"]["usage"] == {
+        "requests": 4,
+        "input_tokens": 260,
+        "output_tokens": 60,
+        "estimated_cost": 0.00076,
+    }
+    assert len(analyzed["job"]["usage_breakdown"]) == 4
+    assert analyzed["usage"] == analyzed["job"]["usage"]
 
     url = f"/api/projects/{project_id}/modules/S1"
     model = client.get(url).json()
-    assert refine_calls == [["width", "depth", "plinth", "material:carcass", "material:front"]]
+    assert refine_calls == [
+        ["width", "depth", "plinth", "material:carcass", "material:front"],
+        ["width", "depth", "plinth", "material:carcass", "material:front"],
+    ]
     assert model["refine_attempts"] == 1
     assert model["module"]["status"] == "incomplete"
     assert [q["id"] for q in model["module"]["questions"]] == ["width", "depth", "plinth"]
@@ -302,6 +325,12 @@ def test_feedback_loop_reruns_model_then_takes_user_answers(client, monkeypatch)
     assert refined["refine_attempts"] == 2
     assert refined["module"]["width_mm"] == 600
     assert [o["target"] for o in refined["overrides"]] == ["width", "depth"]
+    final_detail = client.get(f"/api/projects/{project_id}").json()
+    assert final_detail["usage"]["requests"] == 5
+    assert final_detail["usage"]["input_tokens"] == 290
+    # The manual re-run is its own job: its usage is that one model call; the project total keeps everything.
+    assert final_detail["job"]["usage"]["requests"] == 1
+    assert final_detail["job"]["usage"]["input_tokens"] == 30
 
 
 def test_refine_needs_a_model_interpretation(client, two_door_module):

@@ -33,6 +33,8 @@ Source of truth: the mapping tables in `config/settings.py`. Defaults below are 
 | `FA_VISION_API_BASE` | `models.vision_api_base` | Separate endpoint for the vision model (normally the same server). | `http://localhost:1234/v1` |
 | `FA_BENCHMARK_MODELS` | `models.benchmark` | Comma-separated model list for `make benchmark`. | `qwen3.6-35b,qwen3.5-35b` |
 
+Optional `models.cost_per_million_input` and `models.cost_per_million_output` rates enable an estimated cost in job/project usage totals. Set both rates in the same currency per one million tokens; leaving either unset (the default) records request and token counts only. This estimate applies to interpretation and refine runs and is not provider billing data.
+
 ### `pipeline` — legacy extraction loop
 
 | Env | Field | Meaning | Default |

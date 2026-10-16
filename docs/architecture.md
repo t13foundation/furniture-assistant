@@ -161,8 +161,8 @@ the root, see [Configuration](configuration.md)). One directory per project:
 ├── pricing.yaml                   # project pricing override + markup (optional)
 ├── quote.xlsx                     # uploaded client quote workbook (optional)
 ├── quote.json                     # parsed quote lines (optional)
-├── exports/                       # generated CSV/XLSX/SVG/DXF exports
-└── job.json                       # last analysis job: status, items, module_ids, errors
+├── job.json                       # last analysis job, including request/token totals and page/module breakdown
+└── usage.json                     # cumulative project request/token totals across analyses and refinements
 ```
 
 Writes go through `_write_atomic` (temp file + `os.replace`) so a crash never leaves a

@@ -86,7 +86,7 @@ An interrupted refine is **not** retried automatically: startup or a job read ma
 
 ## Storage and backups
 
-All state is plain files under the projects root — `<FA_OUTPUT_DIR>/webapp/projects`, default `results/webapp/projects`. Each project directory contains `project.json`, `uploads/`, `pages/` (cached PNG renders), `modules/` with `history/` (versions, `history-archive-*` after a re-analysis), `audit.jsonl`, `job.json`, `pricing.yaml`, `quote.xlsx`/`quote.json` and `exports/`.
+All state is plain files under the projects root — `<FA_OUTPUT_DIR>/webapp/projects`, default `results/webapp/projects`. Each project directory contains `project.json`, `uploads/`, `pages/` (cached PNG renders), `modules/` with `history/` (versions, `history-archive-*` after a re-analysis), `audit.jsonl`, `job.json` (latest analysis and its model usage), `usage.json` (cumulative model usage), `pricing.yaml`, `quote.xlsx`/`quote.json` and `exports/`.
 
 - **Back up the projects root directory** — that is the whole application state. Configuration (`config/`), `users.yaml` and the session secret are managed separately.
 - `pages/` is a regenerable cache (hundreds of MB for multi-page packages): it can be excluded from backups and pruned; pages re-render on next view.

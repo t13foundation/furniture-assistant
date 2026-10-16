@@ -2738,6 +2738,16 @@
               }
             ],
             "title": "Error"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageTotals"
+          },
+          "usage_breakdown": {
+            "items": {
+              "$ref": "#/components/schemas/UsageBreakdown"
+            },
+            "type": "array",
+            "title": "Usage Breakdown"
           }
         },
         "type": "object",
@@ -2747,7 +2757,9 @@
           "started_at",
           "finished_at",
           "items",
-          "error"
+          "error",
+          "usage",
+          "usage_breakdown"
         ]
       },
       "LoginBody": {
@@ -4168,6 +4180,9 @@
               }
             ]
           },
+          "usage": {
+            "$ref": "#/components/schemas/UsageTotals"
+          },
           "modules": {
             "items": {
               "$ref": "#/components/schemas/ModuleListEntry"
@@ -4180,6 +4195,7 @@
         "required": [
           "project",
           "job",
+          "usage",
           "modules"
         ],
         "title": "ProjectDetailResponse"
@@ -4659,6 +4675,78 @@
         ],
         "title": "UncertainItem",
         "description": "A value of the draft the model flags as unsure (column/row are 1-based, left→right, top→bottom)."
+      },
+      "UsageBreakdown": {
+        "properties": {
+          "file_name": {
+            "type": "string",
+            "title": "File Name"
+          },
+          "page_index": {
+            "type": "integer",
+            "title": "Page Index"
+          },
+          "module_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Module Id"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageTotals"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_name",
+          "page_index",
+          "module_id",
+          "usage"
+        ],
+        "title": "UsageBreakdown"
+      },
+      "UsageTotals": {
+        "properties": {
+          "requests": {
+            "type": "integer",
+            "title": "Requests",
+            "default": 0
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens",
+            "default": 0
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens",
+            "default": 0
+          },
+          "estimated_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Cost"
+          }
+        },
+        "type": "object",
+        "title": "UsageTotals",
+        "required": [
+          "requests",
+          "input_tokens",
+          "output_tokens",
+          "estimated_cost"
+        ]
       },
       "ValidationError": {
         "properties": {

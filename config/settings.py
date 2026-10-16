@@ -26,6 +26,8 @@ class ModelConfig:
     vision: str = "qwen3.6-35b"
     vision_api_base: str | None = None
     benchmark: list[str] = field(default_factory=lambda: ["qwen3.6-35b", "qwen3.5-35b"])
+    cost_per_million_input: float | None = None
+    cost_per_million_output: float | None = None
 
 
 @dataclass
