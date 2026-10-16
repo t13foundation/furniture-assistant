@@ -92,7 +92,7 @@ Runs on pushes to `dev`/`stage`/`main` and on pull requests; in-progress runs ca
 
 | Job | Steps |
 |---|---|
-| `backend` | `uv sync`, `ruff check`, `ruff format --check` (web-app code and its tests only), `ty check src/furniture src/webapp`, `pytest -q` |
+| `backend` | `uv sync`, `ruff check .`, `ruff format --check .`, `ty check` (whole repository), `pytest -q` |
 | `frontend` | `npm ci`, `tsc --noEmit`, `npm run lint` (oxlint), `npm run build` |
 | `types-drift` | regenerate OpenAPI, `diff` against `webapp/openapi.json` |
 | `e2e` (needs backend + frontend) | Playwright with the fake model; uploads `webapp/test-results` on failure |

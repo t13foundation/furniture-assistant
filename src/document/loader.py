@@ -6,6 +6,7 @@ import math
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Sequence
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from typing import Literal
@@ -148,7 +149,7 @@ class DocumentLoader:
         try:
             with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
                 document = ezdxf.readfile(dxf_path)
-                axes = figure.add_axes([0, 0, 1, 1])
+                axes = figure.add_axes((0, 0, 1, 1))
                 axes.set_axis_off()
                 Frontend(RenderContext(document), MatplotlibBackend(axes)).draw_layout(
                     document.modelspace(), finalize=True
@@ -426,7 +427,7 @@ class DocumentLoader:
 
     @staticmethod
     def _detect_line_positions(
-        projection: np.ndarray,  # type: ignore[name-defined]
+        projection: Sequence[float],
         threshold: float,
         min_gap: int = 10,
     ) -> list[int]:
