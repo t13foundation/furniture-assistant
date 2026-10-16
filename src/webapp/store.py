@@ -12,13 +12,16 @@ Layout under ``<output.dir>/webapp/projects/<project_id>/``::
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import secrets
+import shutil
 import tempfile
 import threading
 import time
-from datetime import datetime
+from contextlib import AbstractContextManager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -43,6 +46,32 @@ class Project(BaseModel):
     files: list[ProjectFile] = Field(default_factory=list)
 
 
+class UsageTotals(BaseModel):
+    requests: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    estimated_cost: float | None = None
+
+    def with_estimated_cost(
+        self, cost_per_million_input: float | None, cost_per_million_output: float | None
+    ) -> UsageTotals:
+        if cost_per_million_input is None or cost_per_million_output is None:
+            cost = None
+        else:
+            cost = round(
+                (self.input_tokens * cost_per_million_input + self.output_tokens * cost_per_million_output) / 1_000_000,
+                8,
+            )
+        return self.model_copy(update={"estimated_cost": cost})
+
+
+class UsageBreakdown(BaseModel):
+    file_name: str
+    page_index: int
+    module_id: str | None = None
+    usage: UsageTotals
+
+
 class JobItem(BaseModel):
     file_index: int
     page_index: int
@@ -57,6 +86,13 @@ class Job(BaseModel):
     finished_at: str | None = None
     items: list[JobItem] = Field(default_factory=list)
     error: str | None = None
+    usage: UsageTotals = Field(default_factory=UsageTotals)
+    usage_breakdown: list[UsageBreakdown] = Field(default_factory=list)
+    kind: Literal["analysis", "refine"] = "analysis"
+    refine_module_id: str | None = None
+    owner: str | None = None
+    claim_token: str | None = None
+    heartbeat_at: str | None = None
 
 
 class ModuleVersion(BaseModel):
@@ -79,8 +115,12 @@ class ProjectNotFoundError(KeyError):
     pass
 
 
+class JobSupersededError(RuntimeError):
+    """Raised when a runner attempts to write after another run claimed the job."""
+
+
 def now_iso() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _write_atomic(path: Path, text: str) -> None:
@@ -103,16 +143,64 @@ def _unique_name(name: str, taken: set[str]) -> str:
     return candidate
 
 
+class ProjectLock(AbstractContextManager["ProjectLock"]):
+    def __init__(self, directory: Path) -> None:
+        self.directory = directory
+        self.thread_lock = threading.RLock()
+        self.local = threading.local()
+
+    def __enter__(self) -> ProjectLock:
+        self.thread_lock.acquire()
+        depth = getattr(self.local, "depth", 0)
+        if depth == 0:
+            stream = None
+            try:
+                try:
+                    stream = (self.directory / ".lock").open("a")
+                except FileNotFoundError:
+                    raise ProjectNotFoundError(self.directory.name) from None
+                fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+                # The project may have been moved to the trash while this thread waited for the lock.
+                if not self.directory.is_dir():
+                    raise ProjectNotFoundError(self.directory.name)
+            except BaseException:
+                if stream is not None:
+                    stream.close()
+                self.thread_lock.release()
+                raise
+            self.local.stream = stream
+        self.local.depth = depth + 1
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        depth = self.local.depth - 1
+        self.local.depth = depth
+        try:
+            if depth == 0:
+                stream = self.local.stream
+                del self.local.stream
+                try:
+                    fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+                finally:
+                    stream.close()
+        finally:
+            self.thread_lock.release()
+
+
 class ProjectStore:
     def __init__(self, root: Path) -> None:
         self.root = root
-        self._locks: dict[str, threading.RLock] = {}
+        self._locks: dict[str, ProjectLock] = {}
         self._locks_guard = threading.Lock()
 
-    def lock(self, project_id: str) -> threading.RLock:
-        """Serializes read-modify-write of a project's modules (API threads, analysis and refine jobs)."""
+    def lock(self, project_id: str) -> ProjectLock:
+        """Serialize project access within threads and across processes on a shared filesystem."""
+        project_id = Path(project_id).name
         with self._locks_guard:
-            return self._locks.setdefault(Path(project_id).name, threading.RLock())
+            lock = self._locks.get(project_id)
+            if lock is None:
+                lock = self._locks[project_id] = ProjectLock(self.root / project_id)
+            return lock
 
     def project_dir(self, project_id: str) -> Path:
         path = self.root / Path(project_id).name
@@ -152,6 +240,21 @@ class ProjectStore:
     def load_project(self, project_id: str) -> Project:
         return Project.model_validate_json((self.project_dir(project_id) / "project.json").read_text(encoding="utf-8"))
 
+    def rename_project(self, project_id: str, name: str) -> Project:
+        with self.lock(project_id):
+            project = self.load_project(project_id)
+            project.name = name
+            _write_atomic(self.project_dir(project_id) / "project.json", project.model_dump_json(indent=2))
+            return project
+
+    def move_project_to_trash(self, project_id: str) -> Path:
+        source = self.project_dir(project_id)
+        trash = self.root.parent / "trash"
+        trash.mkdir(parents=True, exist_ok=True)
+        destination = trash / f"{source.name}-{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+        shutil.move(str(source), str(destination))
+        return destination
+
     def upload_path(self, project_id: str, file_index: int) -> Path:
         project = self.load_project(project_id)
         return self.project_dir(project_id) / "uploads" / project.files[file_index].name
@@ -183,17 +286,31 @@ class ProjectStore:
         return target
 
     # ── Modules ───────────────────────────────────────────────────────
+    def _check_job_claim(self, project_id: str, claim_token: str | None) -> None:
+        if claim_token is None:
+            return
+        current = self.load_job(project_id)
+        if current is None or current.claim_token != claim_token:
+            raise JobSupersededError(f"Job claim for project {project_id} was superseded")
 
     def _modules_dir(self, project_id: str) -> Path:
         path = self.project_dir(project_id) / "modules"
         path.mkdir(exist_ok=True)
         return path
 
-    def save_module(self, project_id: str, model: ModuleModel, user: str = "system", action: str = "save") -> None:
+    def save_module(
+        self,
+        project_id: str,
+        model: ModuleModel,
+        user: str = "system",
+        action: str = "save",
+        claim_token: str | None = None,
+    ) -> None:
         """Save current state and a durable, monotonic version under the project lock.
 
         A save that changes nothing (e.g. a cross-check pass over an unaffected module) adds no version."""
         with self.lock(project_id):
+            self._check_job_claim(project_id, claim_token)
             module_id = Path(model.module.module_id).name
             modules = self._modules_dir(project_id)
             history = modules / "history" / module_id
@@ -234,16 +351,31 @@ class ProjectStore:
         self, project_id: str, action: str, user: str | None, module_id: str | None = None, detail: str | None = None
     ) -> None:
         with self.lock(project_id):
-            path = self.project_dir(project_id) / "audit.jsonl"
-            entry = {
-                "at": now_iso(),
-                "user": user or "system",
-                "action": action,
-                "module_id": module_id,
-                "detail": detail,
-            }
-            with path.open("a", encoding="utf-8") as stream:
-                stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            self._append_audit(self.project_dir(project_id) / "audit.jsonl", action, user, module_id, detail)
+
+    def append_audit_in_directory(
+        self,
+        project_id: str,
+        directory: Path,
+        action: str,
+        user: str | None,
+        module_id: str | None = None,
+        detail: str | None = None,
+    ) -> None:
+        with self.lock(project_id):
+            self._append_audit(directory / "audit.jsonl", action, user, module_id, detail)
+
+    @staticmethod
+    def _append_audit(path: Path, action: str, user: str | None, module_id: str | None, detail: str | None) -> None:
+        entry = {
+            "at": now_iso(),
+            "user": user or "system",
+            "action": action,
+            "module_id": module_id,
+            "detail": detail,
+        }
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     def list_activity(self, project_id: str) -> list[ActivityEntry]:
         """Newest first."""
@@ -281,24 +413,85 @@ class ProjectStore:
             n += 1
         return candidate
 
-    def clear_modules(self, project_id: str) -> None:
-        """Drop the current modules before a re-analysis.
+    def clear_modules(self, project_id: str, claim_token: str | None = None) -> None:
+        """Drop current modules and archive old history before a re-analysis.
 
-        Their version history is archived (not shown in the UI) instead of deleted: restoring a version
-        from a previous analysis would silently resurrect its stale geometry, but the data stays on disk.
+        Restoring a version from the previous analysis would silently resurrect stale geometry,
+        so the old data remains on disk but outside the active history.
         """
-        modules = self._modules_dir(project_id)
-        for path in modules.glob("*.json"):
-            path.unlink()
-        history = modules / "history"
-        if history.exists():
-            history.rename(modules / f"history-archive-{time.strftime('%Y%m%d_%H%M%S')}")
+        with self.lock(project_id):
+            self._check_job_claim(project_id, claim_token)
+            modules = self._modules_dir(project_id)
+            for path in modules.glob("*.json"):
+                path.unlink()
+            history = modules / "history"
+            if history.exists():
+                history.rename(modules / f"history-archive-{time.strftime('%Y%m%d_%H%M%S')}")
 
     # ── Job ───────────────────────────────────────────────────────────
 
-    def save_job(self, project_id: str, job: Job) -> None:
-        _write_atomic(self.project_dir(project_id) / "job.json", job.model_dump_json(indent=2))
+    def save_job(self, project_id: str, job: Job, claim_token: str | None = None) -> None:
+        with self.lock(project_id):
+            self._check_job_claim(project_id, claim_token)
+            existing = self.load_job(project_id)
+            if (
+                existing
+                and existing.owner == job.owner
+                and existing.heartbeat_at
+                and (job.heartbeat_at is None or existing.heartbeat_at > job.heartbeat_at)
+            ):
+                job.heartbeat_at = existing.heartbeat_at
+            _write_atomic(self.project_dir(project_id) / "job.json", job.model_dump_json(indent=2))
 
     def load_job(self, project_id: str) -> Job | None:
         path = self.project_dir(project_id) / "job.json"
         return Job.model_validate_json(path.read_text(encoding="utf-8")) if path.exists() else None
+
+    def load_usage(self, project_id: str) -> UsageTotals:
+        path = self.project_dir(project_id) / "usage.json"
+        return UsageTotals.model_validate_json(path.read_text(encoding="utf-8")) if path.exists() else UsageTotals()
+
+    def record_usage(
+        self,
+        project_id: str,
+        usage: UsageTotals,
+        *,
+        job: Job | None = None,
+        file_name: str,
+        page_index: int,
+        module_id: str | None = None,
+        claim_token: str | None = None,
+    ) -> None:
+        """Persist token totals under the project lock, including an optional job breakdown.
+
+        With ``claim_token``, a superseded run (another worker took the job over) raises instead of writing.
+        """
+        with self.lock(project_id):
+            self._check_job_claim(project_id, claim_token)
+
+            def add(total: UsageTotals, increment: UsageTotals) -> UsageTotals:
+                return UsageTotals(
+                    requests=total.requests + increment.requests,
+                    input_tokens=total.input_tokens + increment.input_tokens,
+                    output_tokens=total.output_tokens + increment.output_tokens,
+                )
+
+            total = add(self.load_usage(project_id), usage)
+            _write_atomic(self.project_dir(project_id) / "usage.json", total.model_dump_json(indent=2))
+            if job is not None:
+                job.usage = add(job.usage, usage)
+                entry = next(
+                    (
+                        row
+                        for row in job.usage_breakdown
+                        if row.file_name == file_name and row.page_index == page_index and row.module_id == module_id
+                    ),
+                    None,
+                )
+                if entry is None:
+                    job.usage_breakdown.append(
+                        UsageBreakdown(file_name=file_name, page_index=page_index, module_id=module_id, usage=usage)
+                    )
+                else:
+                    entry.usage = add(entry.usage, usage)
+                self.save_job(project_id, job, claim_token)

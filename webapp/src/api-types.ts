@@ -216,23 +216,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/analyze": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Analyze */
-        post: operations["analyze_api_projects__project_id__analyze_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/projects/{project_id}": {
         parameters: {
             query?: never;
@@ -244,6 +227,25 @@ export interface paths {
         get: operations["get_project_api_projects__project_id__get"];
         put?: never;
         post?: never;
+        /** Delete Project */
+        delete: operations["delete_project_api_projects__project_id__delete"];
+        options?: never;
+        head?: never;
+        /** Rename Project */
+        patch: operations["rename_project_api_projects__project_id__patch"];
+        trace?: never;
+    };
+    "/api/projects/{project_id}/analyze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Analyze */
+        post: operations["analyze_api_projects__project_id__analyze_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -916,23 +918,6 @@ export interface components {
             /** Cell Ids */
             cell_ids: string[];
         };
-        /** Job */
-        Job: {
-            /**
-             * Status
-             * @default queued
-             * @enum {string}
-             */
-            status: "queued" | "running" | "done" | "error";
-            /** Started At */
-            started_at: string | null;
-            /** Finished At */
-            finished_at: string | null;
-            /** Items */
-            items: components["schemas"]["JobItem"][];
-            /** Error */
-            error: string | null;
-        };
         /** JobItem */
         JobItem: {
             /** File Index */
@@ -949,6 +934,26 @@ export interface components {
             module_ids: string[];
             /** Error */
             error: string | null;
+        };
+        /** JobResponse */
+        JobResponse: {
+            /**
+             * Status
+             * @default queued
+             * @enum {string}
+             */
+            status: "queued" | "running" | "done" | "error";
+            /** Started At */
+            started_at: string | null;
+            /** Finished At */
+            finished_at: string | null;
+            /** Items */
+            items: components["schemas"]["JobItem"][];
+            /** Error */
+            error: string | null;
+            usage: components["schemas"]["UsageTotals"];
+            /** Usage Breakdown */
+            usage_breakdown: components["schemas"]["UsageBreakdown"][];
         };
         /** LoginBody */
         LoginBody: {
@@ -1374,7 +1379,8 @@ export interface components {
         /** ProjectDetailResponse */
         ProjectDetailResponse: {
             project: components["schemas"]["Project"];
-            job: components["schemas"]["Job"] | null;
+            job: components["schemas"]["JobResponse"] | null;
+            usage: components["schemas"]["UsageTotals"];
             /** Modules */
             modules: components["schemas"]["ModuleListEntry"][];
         };
@@ -1400,6 +1406,11 @@ export interface components {
             job_status: string | null;
             /** Module Count */
             module_count: number;
+        };
+        /** ProjectNameBody */
+        ProjectNameBody: {
+            /** Name */
+            name: string;
         };
         /** ProjectPricing */
         ProjectPricing: {
@@ -1539,6 +1550,36 @@ export interface components {
              * @default
              */
             reason: string;
+        };
+        /** UsageBreakdown */
+        UsageBreakdown: {
+            /** File Name */
+            file_name: string;
+            /** Page Index */
+            page_index: number;
+            /** Module Id */
+            module_id: string | null;
+            usage: components["schemas"]["UsageTotals"];
+        };
+        /** UsageTotals */
+        UsageTotals: {
+            /**
+             * Requests
+             * @default 0
+             */
+            requests: number;
+            /**
+             * Input Tokens
+             * @default 0
+             */
+            input_tokens: number;
+            /**
+             * Output Tokens
+             * @default 0
+             */
+            output_tokens: number;
+            /** Estimated Cost */
+            estimated_cost: number | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -2115,6 +2156,101 @@ export interface operations {
             };
         };
     };
+    get_project_api_projects__project_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_project_api_projects__project_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_project_api_projects__project_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectNameBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     analyze_api_projects__project_id__analyze_post: {
         parameters: {
             query?: never;
@@ -2144,36 +2280,12 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-        };
-    };
-    get_project_api_projects__project_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
+            /** @description Model server unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["ProjectDetailResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
+                content?: never;
             };
         };
     };
@@ -2503,6 +2615,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description Model server unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
