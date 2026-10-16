@@ -107,6 +107,11 @@ def test_newline_upload_filename_is_logged_as_one_line(client, monkeypatch, capl
     caplog.set_level("INFO")
     monkeypatch.setattr(analysis, "plan_items", lambda *_: [JobItem(file_index=0, page_index=0)])
 
+    async def model_available(_request):
+        return None
+
+    monkeypatch.setattr(api, "_probe_model_server", model_available)
+
     def fail_extract(*_args):
         raise RuntimeError("stop after filename is logged")
 
