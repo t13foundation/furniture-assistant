@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import time
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
-from src.furniture.schema import CellDraft, ColumnDraft, MaterialSpec, ModuleDraft, PageDraft
+from src.furniture.schema import CellDraft, ColumnDraft, MaterialSpec, ModuleDraft, ModuleModel, PageDraft
 from src.schema.extraction import BoundingBox
 from src.webapp import analysis, api
 
@@ -15,6 +18,11 @@ from src.webapp import analysis, api
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("FA_OUTPUT_DIR", str(tmp_path))
+
+    async def model_available(_request):
+        return None
+
+    monkeypatch.setattr(api, "_probe_model_server", model_available)
     with TestClient(api.app) as test_client:
         yield test_client
 
@@ -47,6 +55,131 @@ def test_create_project_and_reject_unsupported_files(client):
     assert page.headers["content-type"] == "image/png"
     assert client.get(f"/api/projects/{project_id}/pages/0/3.png").status_code == 404
     assert client.get("/api/projects/nope").status_code == 404
+
+
+def test_rename_project_updates_name_and_audit(client):
+    project_id = _create(client)
+
+    renamed = client.patch(f"/api/projects/{project_id}", json={"name": "  renamed workspace  "})
+
+    assert renamed.status_code == 200
+    assert renamed.json()["name"] == "renamed workspace"
+    activity = client.get(f"/api/projects/{project_id}/activity").json()
+    assert activity[0]["action"] == "rename_project"
+    assert activity[0]["detail"] == "renamed workspace"
+    assert client.patch(f"/api/projects/{project_id}", json={"name": "  "}).status_code == 422
+    assert client.patch(f"/api/projects/{project_id}", json={"name": "x" * 121}).status_code == 422
+
+
+def test_delete_project_moves_to_trash_and_hides_it(client, tmp_path):
+    project_id = _create(client)
+
+    deleted = client.delete(f"/api/projects/{project_id}")
+
+    assert deleted.status_code == 204
+    trash = tmp_path / "webapp" / "trash"
+    trashed_project = next(trash.glob(f"{project_id}-*"))
+    audit = (trashed_project / "audit.jsonl").read_text(encoding="utf-8").splitlines()
+    assert json.loads(audit[-1])["action"] == "delete_project"
+    # The deletion record is chained onto the moved log, so the trashed project still verifies.
+    from src.webapp.audit import verify_audit
+
+    assert verify_audit(trashed_project / "audit.jsonl") == (True, None)
+    assert client.get(f"/api/projects/{project_id}").status_code == 404
+    assert client.get("/api/projects").json() == []
+    assert client.delete(f"/api/projects/{project_id}").status_code == 404
+
+
+def test_delete_project_conflicts_while_analysis_runs(client, monkeypatch):
+    started = Event()
+    release = Event()
+
+    async def slow_analysis(*_args, **_kwargs):
+        started.set()
+        await asyncio.to_thread(release.wait)
+
+    monkeypatch.setattr(api, "run_analysis", slow_analysis)
+    project_id = _create(client)
+    assert client.post(f"/api/projects/{project_id}/analyze").status_code == 202
+    try:
+        assert started.wait(timeout=3)
+        assert client.delete(f"/api/projects/{project_id}").status_code == 409
+        assert client.get(f"/api/projects/{project_id}").status_code == 200
+        assert [project["id"] for project in client.get("/api/projects").json()] == [project_id]
+    finally:
+        release.set()
+
+
+def test_analyze_rechecks_project_after_waiting_for_its_lock(client, monkeypatch):
+    project_id = _create(client)
+    store = client.app.state.store
+    project_lock = store.lock(project_id)
+    lock_requested = Event()
+    original_lock = store.lock
+
+    def observe_lock(requested_project_id):
+        lock = original_lock(requested_project_id)
+        if requested_project_id == project_id:
+            lock_requested.set()
+        return lock
+
+    monkeypatch.setattr(store, "lock", observe_lock)
+    project_lock.__enter__()
+    released = False
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            response = executor.submit(client.post, f"/api/projects/{project_id}/analyze")
+            assert lock_requested.wait(timeout=3)
+            store.move_project_to_trash(project_id)
+            project_lock.__exit__(None, None, None)
+            released = True
+            assert response.result(timeout=5).status_code == 404
+    finally:
+        if not released:
+            project_lock.__exit__(None, None, None)
+
+
+def test_delete_project_conflicts_while_refine_runs(client, monkeypatch, two_door_module):
+    started = Event()
+    release = Event()
+    project_id = _create(client)
+    draft = ModuleDraft(
+        module_id="TEST",
+        title="Test wardrobe",
+        view_bbox=BoundingBox(x_min=0.1, y_min=0.1, x_max=0.5, y_max=0.9),
+    )
+    model = analysis.rebuild(two_door_module, client.app.state.rules, draft=draft)
+    client.app.state.store.save_module(project_id, model)
+
+    async def slow_refine(*_args, **_kwargs):
+        started.set()
+        await asyncio.to_thread(release.wait)
+
+    monkeypatch.setattr(api, "refine_stored_module", slow_refine)
+    assert client.post(f"/api/projects/{project_id}/modules/TEST/refine").status_code == 202
+    try:
+        assert started.wait(timeout=3)
+        assert client.delete(f"/api/projects/{project_id}").status_code == 409
+        assert client.get(f"/api/projects/{project_id}").status_code == 200
+        assert [project["id"] for project in client.get("/api/projects").json()] == [project_id]
+    finally:
+        release.set()
+
+
+def test_delete_project_does_not_audit_failed_move(client, monkeypatch):
+    project_id = _create(client)
+    store = client.app.state.store
+
+    def fail_move(_project_id):
+        raise OSError("trash is not writable")
+
+    monkeypatch.setattr(store, "move_project_to_trash", fail_move)
+    with pytest.raises(OSError, match="trash is not writable"):
+        client.delete(f"/api/projects/{project_id}")
+    assert client.get(f"/api/projects/{project_id}").status_code == 200
+    assert all(
+        entry["action"] != "delete_project" for entry in client.get(f"/api/projects/{project_id}/activity").json()
+    )
 
 
 def test_put_module_builds_and_exports(client, two_door_module):
@@ -91,6 +224,136 @@ def test_second_analyze_while_running_conflicts(client, monkeypatch):
     assert client.post("/api/projects/missing/analyze").status_code == 404
 
 
+def test_concurrent_analyze_requests_only_start_one_job(client, monkeypatch):
+    both_probes_entered = Event()
+    release_probes = Event()
+    probe_count = 0
+
+    async def blocked_probe(_request):
+        nonlocal probe_count
+        probe_count += 1
+        if probe_count == 2:
+            both_probes_entered.set()
+        while not release_probes.is_set():
+            await asyncio.sleep(0.01)
+
+    async def slow_analysis(*_args, **_kwargs):
+        await asyncio.sleep(5)
+
+    monkeypatch.setattr(api, "_probe_model_server", blocked_probe)
+    monkeypatch.setattr(api, "run_analysis", slow_analysis)
+    project_id = _create(client)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        requests = [pool.submit(client.post, f"/api/projects/{project_id}/analyze") for _ in range(2)]
+        try:
+            assert both_probes_entered.wait(timeout=5)
+        finally:
+            release_probes.set()
+        statuses = [request.result(timeout=5).status_code for request in requests]
+
+    assert sorted(statuses) == [202, 409]
+
+
+def test_running_analysis_conflicts_before_unavailable_model_probe(client, monkeypatch):
+    async def slow_analysis(*_args, **_kwargs):
+        await asyncio.sleep(5)
+
+    async def unavailable_probe(_request):
+        raise api.HTTPException(503, "model server unavailable")
+
+    monkeypatch.setattr(api, "run_analysis", slow_analysis)
+    project_id = _create(client)
+    assert client.post(f"/api/projects/{project_id}/analyze").status_code == 202
+    monkeypatch.setattr(api, "_probe_model_server", unavailable_probe)
+
+    response = client.post(f"/api/projects/{project_id}/analyze")
+
+    assert response.status_code == 409
+
+
+def _save_refinable_module(project_id: str, two_door_module) -> None:
+    draft = ModuleDraft(
+        module_id=two_door_module.module_id,
+        title=two_door_module.title,
+        view_bbox=two_door_module.view_bbox,
+    )
+    api.app.state.store.save_module(project_id, ModuleModel(module=two_door_module, draft=draft))
+
+
+def test_concurrent_refine_requests_only_start_one_rerun(client, monkeypatch, two_door_module):
+    both_probes_entered = Event()
+    release_probes = Event()
+    probe_count = 0
+
+    async def blocked_probe(_request):
+        nonlocal probe_count
+        probe_count += 1
+        if probe_count == 2:
+            both_probes_entered.set()
+        while not release_probes.is_set():
+            await asyncio.sleep(0.01)
+
+    async def slow_refine(*_args, **_kwargs):
+        await asyncio.sleep(5)
+
+    monkeypatch.setattr(api, "_probe_model_server", blocked_probe)
+    monkeypatch.setattr(api, "refine_stored_module", slow_refine)
+    project_id = _create(client)
+    _save_refinable_module(project_id, two_door_module)
+    url = f"/api/projects/{project_id}/modules/TEST/refine"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        requests = [pool.submit(client.post, url) for _ in range(2)]
+        try:
+            assert both_probes_entered.wait(timeout=5)
+        finally:
+            release_probes.set()
+        statuses = [request.result(timeout=5).status_code for request in requests]
+
+    assert sorted(statuses) == [202, 409]
+
+
+def test_analyze_and_refine_requests_conflict_after_probe(client, monkeypatch, two_door_module):
+    both_probes_entered = Event()
+    release_probes = Event()
+    probe_count = 0
+
+    async def blocked_probe(_request):
+        nonlocal probe_count
+        probe_count += 1
+        if probe_count == 2:
+            both_probes_entered.set()
+        while not release_probes.is_set():
+            await asyncio.sleep(0.01)
+
+    async def slow_analysis(*_args, **_kwargs):
+        await asyncio.sleep(5)
+
+    async def slow_refine(*_args, **_kwargs):
+        await asyncio.sleep(5)
+
+    monkeypatch.setattr(api, "_probe_model_server", blocked_probe)
+    monkeypatch.setattr(api, "run_analysis", slow_analysis)
+    monkeypatch.setattr(api, "refine_stored_module", slow_refine)
+    project_id = _create(client)
+    _save_refinable_module(project_id, two_door_module)
+    urls = [
+        f"/api/projects/{project_id}/analyze",
+        f"/api/projects/{project_id}/modules/TEST/refine",
+    ]
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        requests = [pool.submit(client.post, url) for url in urls]
+        try:
+            assert both_probes_entered.wait(timeout=5)
+        finally:
+            release_probes.set()
+        statuses = [request.result(timeout=5).status_code for request in requests]
+
+    assert sorted(statuses) == [202, 409]
+
+
 def _wait_for(client: TestClient, url: str, done, timeout: float = 10.0) -> dict:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -116,11 +379,14 @@ def test_feedback_loop_reruns_model_then_takes_user_answers(client, monkeypatch)
         ],
     )
     refine_calls: list[list[str]] = []
+    from types import SimpleNamespace
 
-    async def interpret(*_args, **_kwargs):
+    async def interpret(*_args, **kwargs):
+        await kwargs["on_usage"](SimpleNamespace(requests=1, input_tokens=100, output_tokens=20))
         return first
 
-    async def refine(_agent, _image, module, draft):
+    async def refine(_agent, _image, module, draft, **kwargs):
+        await kwargs["on_usage"](SimpleNamespace(requests=1, input_tokens=30, output_tokens=10))
         refine_calls.append([q.id for q in module.questions])
         # The model finds the materials but still not the width.
         materials = [MaterialSpec(key="M1", name="Płyta biała", kind="laminated_board")]
@@ -133,13 +399,33 @@ def test_feedback_loop_reruns_model_then_takes_user_answers(client, monkeypatch)
     monkeypatch.setattr(analysis, "interpret_page", interpret)
     monkeypatch.setattr(analysis, "refine_draft", refine)
 
-    project_id = _create(client)
+    uploaded = client.post(
+        "/api/projects",
+        files=[
+            ("files", ("drawing-1.png", _png(), "image/png")),
+            ("files", ("drawing-2.png", _png(), "image/png")),
+        ],
+    )
+    project_id = uploaded.json()["id"]
+    api.app.state.config.models.cost_per_million_input = 2.0
+    api.app.state.config.models.cost_per_million_output = 4.0
     assert client.post(f"/api/projects/{project_id}/analyze").status_code == 202
-    _wait_for(client, f"/api/projects/{project_id}", lambda body: body["job"]["status"] == "done")
+    analyzed = _wait_for(client, f"/api/projects/{project_id}", lambda body: body["job"]["status"] == "done")
+    assert analyzed["job"]["usage"] == {
+        "requests": 4,
+        "input_tokens": 260,
+        "output_tokens": 60,
+        "estimated_cost": 0.00076,
+    }
+    assert len(analyzed["job"]["usage_breakdown"]) == 4
+    assert analyzed["usage"] == analyzed["job"]["usage"]
 
     url = f"/api/projects/{project_id}/modules/S1"
     model = client.get(url).json()
-    assert refine_calls == [["width", "depth", "plinth", "material:carcass", "material:front"]]
+    assert refine_calls == [
+        ["width", "depth", "plinth", "material:carcass", "material:front"],
+        ["width", "depth", "plinth", "material:carcass", "material:front"],
+    ]
     assert model["refine_attempts"] == 1
     assert model["module"]["status"] == "incomplete"
     assert [q["id"] for q in model["module"]["questions"]] == ["width", "depth", "plinth"]
@@ -165,6 +451,12 @@ def test_feedback_loop_reruns_model_then_takes_user_answers(client, monkeypatch)
     assert refined["refine_attempts"] == 2
     assert refined["module"]["width_mm"] == 600
     assert [o["target"] for o in refined["overrides"]] == ["width", "depth"]
+    final_detail = client.get(f"/api/projects/{project_id}").json()
+    assert final_detail["usage"]["requests"] == 5
+    assert final_detail["usage"]["input_tokens"] == 290
+    # The manual re-run is its own job: its usage is that one model call; the project total keeps everything.
+    assert final_detail["job"]["usage"]["requests"] == 1
+    assert final_detail["job"]["usage"]["input_tokens"] == 30
 
 
 def test_refine_needs_a_model_interpretation(client, two_door_module):

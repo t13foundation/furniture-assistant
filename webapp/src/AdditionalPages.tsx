@@ -4,6 +4,7 @@ import { api } from './api'
 import { ProjectSidebar } from './ProjectView'
 import type {
   ActivityEntry,
+  ActivityIntegrityResponse,
   ModuleModel,
   ModuleVersion,
   Override,
@@ -280,17 +281,22 @@ export function ActivityPage() {
   const { id = '' } = useParams()
   const [detail, setDetail] = useState<ProjectDetail | null>(null)
   const [activity, setActivity] = useState<ActivityEntry[]>([])
+  const [chainStatus, setChainStatus] = useState<ActivityIntegrityResponse['chain_status'] | null>(null)
+  const [chainError, setChainError] = useState<string | null>(null)
   const [error, setError] = useState('')
   useEffect(() => {
     let active = true
     void Promise.all([
       api<ProjectDetail>(`/api/projects/${encodeURIComponent(id)}`),
       api<ActivityEntry[]>(`/api/projects/${encodeURIComponent(id)}/activity`),
+      api<ActivityIntegrityResponse>(`/api/projects/${encodeURIComponent(id)}/activity/integrity`),
     ])
-      .then(([project, entries]) => {
+      .then(([project, entries, integrity]) => {
         if (active) {
           setDetail(project)
           setActivity(entries)
+          setChainStatus(integrity.chain_status)
+          setChainError(integrity.chain_error)
         }
       })
       .catch((e: unknown) => {
@@ -310,6 +316,21 @@ export function ActivityPage() {
             <h1>Activity</h1>
           </div>
         </header>
+        <section className="report-card audit-integrity">
+          <span
+            className={`status-pill ${chainStatus === 'invalid' ? 'error' : chainStatus === 'verified' ? 'done' : ''}`}
+          >
+            {chainStatus === null
+              ? 'Checking audit integrity…'
+              : chainStatus === 'verified'
+                ? 'Audit chain verified'
+                : chainStatus === 'unverified'
+                  ? 'Legacy audit log — unverified'
+                  : 'Audit chain invalid'}
+          </span>
+          {chainError && <p role="alert">{chainError}</p>}
+          <a href={`/api/projects/${encodeURIComponent(id)}/audit.jsonl`}>Download audit log</a>
+        </section>
         {error && (
           <p role="alert" className="error-banner">
             {error}

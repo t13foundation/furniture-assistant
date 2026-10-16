@@ -3,7 +3,7 @@
 Values are layered; the last layer that sets a value wins:
 
 1. `config/default.yaml` — checked-in defaults.
-2. `FA_*` environment variables. The web app also loads a `.env` file from the repo root at startup (`load_dotenv` in `src/webapp/api.py`), so `FA_*` and `OPENAI_API_KEY` may live there.
+2. `FA_*` environment variables. Outside production, the web app also loads a `.env` file from the repo root at startup. `FA_ENV` is resolved only from the process environment before `.env` is loaded; a value in `.env` is ignored. In production (`FA_ENV=production`), `.env` is not loaded; secrets must be provided by the process environment.
 3. CLI arguments (`main.py --api-base …`, `--orchestrator …`) — legacy pipeline only. The web app has no CLI layer.
 
 The loader is `AppConfig.from_yaml` in `config/settings.py`. The web app reads the same file and env at startup (lifespan in `src/webapp/api.py`); the legacy pipeline additionally applies CLI args on top.
@@ -32,6 +32,8 @@ Source of truth: the mapping tables in `config/settings.py`. Defaults below are 
 | `FA_VISION_MODEL` | `models.vision` | Vision model for legacy-pipeline image tools. | `internvl3-78b-instruct` |
 | `FA_VISION_API_BASE` | `models.vision_api_base` | Separate endpoint for the vision model (normally the same server). | `http://localhost:1234/v1` |
 | `FA_BENCHMARK_MODELS` | `models.benchmark` | Comma-separated model list for `make benchmark`. | `qwen3.6-35b,qwen3.5-35b` |
+
+Optional `models.cost_per_million_input` and `models.cost_per_million_output` rates enable an estimated cost in job/project usage totals. Set both rates in the same currency per one million tokens; leaving either unset (the default) records request and token counts only. This estimate applies to interpretation and refine runs and is not provider billing data.
 
 ### `pipeline` — legacy extraction loop
 
@@ -85,14 +87,19 @@ Read directly from the environment (not part of `AppConfig`):
 
 | Env | Read in | Meaning | Default |
 |---|---|---|---|
+| `FA_ENV` | `src/webapp/api.py`, `src/webapp/auth.py` | Runtime mode, read from the process environment before dotenv loading; `.env` cannot select the mode. Exact values `development` or `production` (case-insensitive) only; any other value fails startup. Production disables `.env` loading and requires `FA_SESSION_SECRET`; it also defaults the session cookie to `Secure`. | `development` |
+| `FA_PUBLIC_URL` | `src/webapp/api.py` | Public app URL; an `https://` URL defaults the session cookie to `Secure`. | unset |
 | `FA_USERS_FILE` | `src/webapp/auth.py` | Path to `users.yaml`. Auth is enabled iff the file exists and lists at least one user. | `config/users.yaml` |
-| `FA_SESSION_SECRET` | `src/webapp/auth.py` | HMAC key signing session cookies. **Set this in production.** | auto-generated `config/.session_secret` (see [Operations](operations.md#session-secret)) |
-| `FA_COOKIE_SECURE` | `src/webapp/api.py` | Adds the `secure` flag to the session cookie. Set to `true` once TLS terminates in front of the app. | `false` |
-| `FA_MAX_UPLOAD_MB` | `src/webapp/api.py` | Per-file upload limit; larger files get HTTP 413. | `50` |
+| `FA_SESSION_SECRET` | `src/webapp/auth.py` | HMAC key signing session cookies. Required in production; in development, absent value uses a local fallback file. | unset |
+| `FA_COOKIE_SECURE` | `src/webapp/api.py` | Explicit `Secure` flag for the session cookie; accepts exactly `true`/`false`, `yes`/`no`, or `1`/`0` without surrounding whitespace, case-insensitively, and overrides the production / HTTPS defaults. Invalid values fail startup. | production or HTTPS URL: `true`; otherwise `false` |
+| `FA_MAX_REQUEST_MB` | `src/webapp/api.py` | Maximum total multipart request body for project creation and quote import; rejected before parsing when oversized. | `200` |
+| `FA_MAX_UPLOAD_MB` | `src/webapp/api.py`, `src/webapp/reports.py` | Maximum size per uploaded file; larger files get HTTP 413. | `50` |
 | `FA_MAX_FILES` | `src/webapp/api.py` | Maximum files per project; more get HTTP 413. | `50` |
 | `FA_LOG_FORMAT` | `src/webapp/observability.py` | Application log format: `json` or `text`. | `text` |
 | `FA_LOG_LEVEL` | `src/webapp/observability.py` | Application logging threshold (e.g. `INFO`, `DEBUG`, `WARNING`). | `INFO` |
-| `OPENAI_API_KEY` | `src/furniture/interpret.py` | API key used when `FA_API_BASE` points at `api.openai.com` and no real key is configured. Read from env or `.env`. | unset |
+| `OPENAI_API_KEY` | `src/furniture/interpret.py` | API key used when `FA_API_BASE` points at `api.openai.com` and no real key is configured. Read from process environment; `.env` only in development. | unset |
+
+In production, set `FA_ENV=production` in the process environment (values are case-insensitive). `.env` cannot select the runtime mode; if `FA_ENV` is absent from the process environment, the mode remains `development` even if `.env` contains an `FA_ENV` entry. Provide `FA_SESSION_SECRET` from a protected environment source (for example, a systemd credential or secret manager). The app fails at startup if the secret is missing or `FA_COOKIE_SECURE` is set to an invalid value. The cookie is `Secure` in production or when `FA_PUBLIC_URL` uses HTTPS, unless a valid explicit `FA_COOKIE_SECURE` value overrides it.
 
 ## `config/default.yaml`
 

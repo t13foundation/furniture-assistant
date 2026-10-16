@@ -20,6 +20,23 @@ SESSION_SECONDS = 60 * 60 * 24 * 7
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def environment_mode() -> str:
+    """Return the validated runtime mode from the process environment."""
+    value = os.environ.get("FA_ENV", "development").lower()
+    if value not in {"development", "production"}:
+        raise RuntimeError("FA_ENV must be 'development' or 'production'")
+    return value
+
+
+def is_production() -> bool:
+    return environment_mode() == "production"
+
+
+def require_production_secret() -> None:
+    if is_production() and not os.environ.get("FA_SESSION_SECRET"):
+        raise RuntimeError("FA_SESSION_SECRET is required when FA_ENV=production")
+
+
 def users_path() -> Path:
     return Path(os.environ.get("FA_USERS_FILE", ROOT / "config" / "users.yaml"))
 
@@ -53,6 +70,8 @@ def _secret() -> bytes:
     value = os.environ.get("FA_SESSION_SECRET")
     if value:
         return value.encode()
+    if is_production():
+        raise RuntimeError("FA_SESSION_SECRET is required when FA_ENV=production")
     path = ROOT / "config" / ".session_secret"
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
