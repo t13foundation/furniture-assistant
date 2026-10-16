@@ -35,9 +35,9 @@ The detail response is the polling endpoint: `job` is the current analysis job (
 
 | Method | Path | Request | Response | Auth |
 |---|---|---|---|---|
-| POST | `/api/projects/{project_id}/analyze` | — | `202 StatusResponse {status: "queued"}` | cookie |
+| POST | `/api/projects/{project_id}/analyze` | — | `202 StatusResponse {status: "queued"}` or `503 {"detail": ...}` | cookie |
 
-Queues the background job that renders every page, extracts dimension marks, runs the interpretation agent per page, resolves modules and rebuilds them (sequence diagram in [Architecture](architecture.md)). `409` if an analysis or model re-run is already in flight for the project.
+Queues the background job that renders every page, extracts dimension marks, runs the interpretation agent per page, resolves modules and rebuilds them (sequence diagram in [Architecture](architecture.md)). Before queueing, the API probes `GET {FA_API_BASE}/models` with a 5-second timeout; a connection failure, timeout or non-2xx response returns `503` naming the model URL, without creating a job. `409` if an analysis or model re-run is already in flight for the project.
 
 ## Modules
 
@@ -46,14 +46,14 @@ Queues the background job that renders every page, extracts dimension marks, run
 | GET | `/api/projects/{project_id}/modules/{module_id}` | — | `ModuleModel` | cookie |
 | PUT | `/api/projects/{project_id}/modules/{module_id}` | `FurnitureModule` | `ModuleModel` | cookie |
 | POST | `/api/projects/{project_id}/modules/{module_id}/answers` | `AnswersBody {overrides: Override[]}` | `ModuleModel` | cookie |
-| POST | `/api/projects/{project_id}/modules/{module_id}/refine` | — | `202 StatusResponse {status: "running"}` | cookie |
+| POST | `/api/projects/{project_id}/modules/{module_id}/refine` | — | `202 StatusResponse {status: "running"}` or `503 {"detail": ...}` | cookie |
 | GET | `/api/projects/{project_id}/modules/{module_id}/versions` | — | `ModuleVersion[]` | cookie |
 | GET | `/api/projects/{project_id}/modules/{module_id}/versions/{version}` | — | `ModuleModel` | cookie |
 | POST | `/api/projects/{project_id}/modules/{module_id}/versions/{version}/restore` | — | `ModuleModel` | cookie |
 
 - **PUT** is the editor save: the backend converts the edited module into overrides on the model's interpretation, merges them with existing ones, re-runs checks and rebuilds (see [Review workflow](review-workflow.md#editing)).
 - **answers** applies review-tab answers; an override without values removes that target's override; an empty list just re-runs the checks and rebuilds.
-- **refine** is the "Ask the model again" button — a background model re-run; poll the module until `refine_status` leaves `running`. The result is kept only if it closes gaps ([Review workflow](review-workflow.md#ask-the-model-again)).
+- **refine** is the "Ask the model again" button — a background model re-run; poll the module until `refine_status` leaves `running`. The result is kept only if it closes gaps ([Review workflow](review-workflow.md#ask-the-model-again)). Before scheduling the run, the API performs the same 5-second model-server probe as `analyze`; a failed probe returns `503` without changing the module or audit log.
 - **restore** does not rewind: it saves the old version as a new version and re-runs the project cross-checks.
 
 Module fields, override targets and issue codes are documented in [Data model](data-model.md).

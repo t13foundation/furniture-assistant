@@ -17,6 +17,16 @@ from src.webapp import api
 from src.webapp.store import Job, JobSupersededError, ProjectLock, ProjectStore, now_iso
 
 
+@pytest.fixture(autouse=True)
+def model_server_available(monkeypatch):
+    """These tests exercise job durability; the pre-flight model probe is covered in test_webapp_improvements."""
+
+    async def available(_request):
+        return None
+
+    monkeypatch.setattr(api, "_probe_model_server", available)
+
+
 def _contend(root: str, project_id: str, start, active, maximum) -> None:
     store = ProjectStore(Path(root))
     start.wait()
