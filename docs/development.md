@@ -4,17 +4,17 @@ Repository conventions, test layers and the release process. End-user configurat
 
 ## Repository layout
 
-| Path | Contents |
-|---|---|
-| `src/furniture/` | Drawing → 3D domain: `marks`, `legend`, `annotate`, `interpret`, `resolve`, `build`, `hardware`, `processes`, `nest`, `export`, `reports`, `pricing`, `quote`, `rules`, `schema` |
-| `src/webapp/` | FastAPI app: `api`, `analysis` (background jobs), `store` (file-backed project store), `auth`, `users` (CLI), `reports`, `openapi` |
-| `src/{document,ocr,pipeline,tools,reference,schema,output,vision,evaluation}/` | Legacy extraction pipeline (batch CLI, `main.py`) |
-| `webapp/` | React + react-three-fiber frontend (`src/`), Playwright e2e (`e2e/`), generated `openapi.json` and `src/api-types.ts` |
-| `config/` | `default.yaml` + `settings.py` (loader), `furniture.yaml` (shop rules), `pricing.yaml`, `agent_prompts.py` |
-| `tests/` | pytest suite (see below) |
-| `samples/` | Two committed sample sheets (public; used by tests and the demo) |
-| `docs/` | This mkdocs site |
-| `sample-data/`, `private/`, `results*/` | Gitignored: project packages, local customer material, run outputs |
+| Path                                                                           | Contents                                                                                                                                                                                         |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/furniture/`                                                               | Drawing → 3D domain: `marks`, `legend`, `annotate`, `interpret`, `resolve`, `build`, `hardware`, `processes`, `nest`, `export`, `reports`, `pricing`, `quote`, `rules`, `schema`                 |
+| `src/webapp/`                                                                  | FastAPI app: `api`, `analysis` (background jobs), `store` (file-backed project store), `auth`, `users` (CLI), `reports`, `openapi`                                                               |
+| `src/{document,ocr,pipeline,tools,reference,schema,output,vision,evaluation}/` | Legacy extraction pipeline (batch CLI, `main.py`)                                                                                                                                                |
+| `webapp/`                                                                      | React + react-three-fiber frontend (`src/`): route-level lazy pages, per-report modules and split module header/editor; Playwright e2e (`e2e/`), generated `openapi.json` and `src/api-types.ts` |
+| `config/`                                                                      | `default.yaml` + `settings.py` (loader), `furniture.yaml` (shop rules), `pricing.yaml`, `agent_prompts.py`                                                                                       |
+| `tests/`                                                                       | pytest suite (see below)                                                                                                                                                                         |
+| `samples/`                                                                     | Two committed sample sheets (public; used by tests and the demo)                                                                                                                                 |
+| `docs/`                                                                        | This mkdocs site                                                                                                                                                                                 |
+| `sample-data/`, `private/`, `results*/`                                        | Gitignored: project packages, local customer material, run outputs                                                                                                                               |
 
 `main.py` is the legacy pipeline CLI; the web app entry point is `src.webapp.api:app`.
 
@@ -22,18 +22,18 @@ Repository conventions, test layers and the release process. End-user configurat
 
 Full list: `make help`. The ones used daily:
 
-| Target | Purpose |
-|---|---|
-| `make install` / `make sync` | `uv sync` / `uv lock && uv sync` |
-| `make hooks` | Install pre-commit git hooks |
-| `make web WEB_PORT=8010` | Run the web app (default :8000); serves `webapp/dist` |
-| `make web-ui` | Vite dev server on :5173 (proxies `/api` to :8000) |
-| `make web-build` | `npm ci && npm run build` into `webapp/dist` |
-| `make web-types` | Regenerate `webapp/openapi.json` + `webapp/src/api-types.ts` |
-| `make web-e2e` | Build frontend, install chromium, run Playwright |
-| `make docs` / `make docs-build` | Serve mkdocs on :8001 / strict build into `site/` |
-| `make test` / `make check` | pytest / ruff + ty |
-| `make run-project PROJECT="<dir under sample-data>"` | Legacy pipeline over one project package |
+| Target                                                      | Purpose                                                           |
+| ----------------------------------------------------------- | ----------------------------------------------------------------- |
+| `make install` / `make sync`                                | `uv sync` / `uv lock && uv sync`                                  |
+| `make hooks`                                                | Install pre-commit git hooks                                      |
+| `make web WEB_PORT=8010`                                    | Run the web app (default :8000); serves `webapp/dist`             |
+| `make web-ui`                                               | Vite dev server on :5173 (proxies `/api` to :8000)                |
+| `make web-build`                                            | `npm ci && npm run build` into `webapp/dist`                      |
+| `make web-types`                                            | Regenerate `webapp/openapi.json` + `webapp/src/api-types.ts`      |
+| `make web-e2e`                                              | Build frontend, install chromium, run Playwright                  |
+| `make docs` / `make docs-build`                             | Serve mkdocs on :8001 / strict build into `site/`                 |
+| `make test` / `make check`                                  | pytest / ruff + ty                                                |
+| `make run-project PROJECT="<dir under sample-data>"`        | Legacy pipeline over one project package                          |
 | `make run`, `make single`, `make benchmark`, `make compare` | Legacy pipeline batch/single/model-comparison/OCR-comparison runs |
 
 ## Test layers

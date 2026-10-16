@@ -16,7 +16,19 @@ async function reviewCount(page: Page): Promise<number> {
   return Number(label.replace(/\D/g, ''))
 }
 
+async function ensureProjectUrl(page: Page) {
+  if (!projectUrl) {
+    await page.goto('/')
+    await page
+      .getByRole('link', { name: /E2E szafa/ })
+      .first()
+      .click()
+    projectUrl = page.url()
+  }
+}
+
 async function openModule(page: Page) {
+  await ensureProjectUrl(page)
   await page.goto(projectUrl)
   await page
     .getByRole('link', { name: /Szafa testowa/ })
@@ -128,6 +140,90 @@ test('narrow screens hide the sidebar behind a menu button', async ({ page }) =>
   await expect(page.getByRole('link', { name: /Szafa testowa/ }).first()).toBeHidden()
   await menu.click()
   await expect(page.getByRole('link', { name: /Szafa testowa/ }).first()).toBeVisible()
+})
+test('A to B to A does not expose stale module data after a failed reload', async ({ page }) => {
+  await ensureProjectUrl(page)
+  const projectId = new URL(projectUrl).hash.match(/\/p\/([^/]+)/)?.[1]
+  expect(projectId).toBeTruthy()
+  await page.route('**/api/projects/*', async (route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname !== `/api/projects/${projectId}` || route.request().method() !== 'GET') {
+      await route.continue()
+      return
+    }
+    const response = await route.fetch()
+    const detail = (await response.json()) as { modules: Array<Record<string, unknown>> }
+    await route.fulfill({
+      response,
+      json: {
+        ...detail,
+        modules: [
+          ...detail.modules,
+          { ...detail.modules[0], module_id: 'SZ02', title: 'Second cabinet', group_id: 'SZ02' },
+        ],
+      },
+    })
+  })
+  let aRequests = 0
+  await page.route('**/api/projects/*/modules/*', async (route) => {
+    const pathname = new URL(route.request().url()).pathname
+    if (route.request().method() === 'GET' && pathname.endsWith('/modules/SZ01')) {
+      aRequests += 1
+      if (aRequests === 2) {
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: 'module unavailable' }),
+        })
+        return
+      }
+    } else if (route.request().method() === 'GET' && pathname.endsWith('/modules/SZ02')) {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'module unavailable' }),
+      })
+      return
+    }
+    await route.continue()
+  })
+
+  await page.goto(projectUrl)
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: /Second cabinet/ })).toBeVisible()
+  await page.getByRole('link', { name: /Second cabinet/ }).click()
+  await expect(page.getByText('module unavailable')).toBeVisible()
+  await page.getByRole('link', { name: /Szafa testowa/ }).click()
+
+  await expect.poll(() => aRequests).toBe(2)
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0)
+  await expect(page.getByText('module unavailable')).toBeVisible()
+})
+
+test('successful report reload clears its previous error', async ({ page }) => {
+  let failed = false
+  await ensureProjectUrl(page)
+  await page.route('**/api/projects/*/summary/materials', async (route) => {
+    if (!failed) {
+      failed = true
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'report unavailable' }),
+      })
+    } else {
+      await route.continue()
+    }
+  })
+  await page.goto(`${projectUrl}/materials`)
+  await expect(page.getByText('report unavailable')).toBeVisible()
+
+  await page.getByRole('link', { name: 'Production processes', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Production processes' })).toBeVisible()
+  await page.getByRole('link', { name: 'Material summary', exact: true }).click()
+
+  await expect(page.getByRole('heading', { name: 'Material summary' })).toBeVisible()
+  await expect(page.getByText('report unavailable')).toHaveCount(0)
 })
 
 test('rename and delete a project', async ({ page }) => {
