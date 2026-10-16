@@ -163,7 +163,7 @@ Every HTTP response includes `X-Request-ID`. A valid incoming `X-Request-ID` (1â
 - Supply `FA_SESSION_SECRET` through a protected process environment / credential source. Startup fails if it is missing.
 - Set `FA_USERS_FILE` to a protected users file with at least one account.
 - Set `FA_PUBLIC_URL=https://â€¦` when the public endpoint uses HTTPS. This defaults the cookie to `Secure`; `FA_COOKIE_SECURE` can explicitly override it using an accepted boolean spelling.
-- Keep the app behind TLS termination, bind uvicorn to loopback, and run one worker / one replica.
+- Keep the app behind TLS termination and bind uvicorn to loopback. Several workers on one host are fine (`--workers N`); several hosts need a shared filesystem with working `flock` (see [Process and host constraints](#process-and-host-constraints)).
 - Keep model/API keys out of the repository and `.env`; inject them through the service environment or credential mechanism.
 
 ## systemd unit example

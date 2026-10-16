@@ -6,34 +6,36 @@ Review of the Furniture Assistant web app against real-deployment requirements, 
 
 | Priority | Findings | Done | Partly done | Open |
 |---|---|---|---|---|
-| P0 — blocks real deployment | 6 | 3 | 1 | 2 |
-| P1 — needed before customer-facing use | 10 | 1 | 0 | 9 |
-| P2 — quality and robustness | 7 | 0 | 0 | 7 |
+| P0 — blocks real deployment | 6 | 6 | 0 | 0 |
+| P1 — needed before customer-facing use | 10 | 9 | 1 | 0 |
+| P2 — quality and robustness | 7 | 0 | 1 | 6 |
 
 Top 5 open items, in order of risk:
 
-1. **No model-server readiness check on `analyze` (P0, remainder).** The health endpoint exists, but a job is still accepted when the model server is down and fails on its first page instead of getting a 503.
-2. **`OPENAI_API_KEY` read from `.env` in the repo directory (P0).** No secret manager; anyone with repo-dir access can read the key.
-3. **No authorization model (P1).** Every logged-in user sees every project; there are no roles.
-4. **No tamper-evident audit trail (P1).** Per-project audit and version files are editable.
-5. **No backup/retention automation (P1).** State needs an operator-managed backup and cleanup plan.
+1. **No per-project access control (P1, remainder of Authorization).** Roles limit what a user may change, but every signed-in user can read every project.
+2. **Audit trust anchor lives next to the log.** The hash chain detects edits inside the log, but tail truncation, deletion of the whole log, or a coordinated rewrite of `audit.jsonl` and `project.json` can only be detected against an externally kept `head_hash` (see [Operations](operations.md)).
+3. **Placeholder labour rate in valuations (P2).** Out-of-the-box valuations use an unvalidated labour rate, so the suggested markup is calibrated against incomplete costs.
+4. **Secrets come from the process environment only.** Production refuses `.env`, but there is no secret-manager integration yet; inject `FA_SESSION_SECRET` and `OPENAI_API_KEY` through a protected service environment.
+5. **No prompt regression harness (reasoning gap 8).** The fake-model e2e proves the UI, not interpretation quality.
 
-Done in this release (each covered by tests in `tests/test_webapp_improvements.py`):
+Done in this release (each item has regression tests under `tests/` and, where it has UI, Playwright coverage in `webapp/e2e/`):
 
-- Session cookie `Secure` defaults on in production or for an HTTPS `FA_PUBLIC_URL`; explicit `FA_COOKIE_SECURE` wins.
-- Production does not load `.env`, requires `FA_SESSION_SECRET`, and cannot create the development fallback secret file.
-- Upload limits: `FA_MAX_REQUEST_MB` total request, `FA_MAX_UPLOAD_MB` per file and `FA_MAX_FILES` per project; oversized bodies are rejected before buffering.
-- Public `GET /api/health` endpoint (exempt from auth), reporting model URL, projects-root writability and auth state.
-- Model-server readiness: `analyze` and module `refine` probe `GET {FA_API_BASE}/models` before starting work; failures return HTTP 503 without queuing or changing project/module state.
-- React `ErrorBoundary` around the router, so a render error shows a "Reload" page instead of a blank screen.
-- `WEB_PORT` Makefile variable (`make web WEB_PORT=8010`).
-- Central role enforcement for `viewer`, `editor`, and `admin`; legacy users without a role retain admin access.
+- Multiple uvicorn workers on one host: per-project `fcntl` file locks, persisted job ownership with heartbeats and claim-token fencing, stale analyses resumed on startup and on read.
+- Production mode (`FA_ENV=production`): no `.env` loading, required `FA_SESSION_SECRET`, strict `FA_ENV`/`FA_COOKIE_SECURE` parsing, `Secure` session cookie by default in production or behind an HTTPS `FA_PUBLIC_URL`.
+- Upload limits enforced before buffering: `FA_MAX_REQUEST_MB` per request, `FA_MAX_UPLOAD_MB` per file, `FA_MAX_FILES` per project (HTTP 413).
+- Model-server readiness: `analyze` and module `refine` probe `GET {FA_API_BASE}/models` and answer 503 without queuing work; a running job still answers 409 first.
+- Public `GET /api/health`; React `ErrorBoundary`; `WEB_PORT` Makefile variable.
+- Project rename and deletion to a recoverable `webapp/trash/`; a project trashed while a request waits for its lock answers 404.
+- Viewer / editor / admin roles enforced centrally and mirrored in the UI (legacy users without a role keep admin access).
+- Hash-chained `audit.jsonl` with a persisted chain checkpoint, verify CLI, `/activity/integrity` endpoint, raw download and an integrity badge.
+- Model usage (requests, input/output tokens) per job and per project, with an optional cost estimate at the current rates.
+- Request IDs, JSON/text logs, and PydanticAI tracing that excludes drawing text and images unless explicitly opted in.
+- `backup` and `prune` maintenance commands (archives, page caches, trash) that take the same file locks as the server.
+- Route-level code splitting (largest chunk 377 kB, down from 1.32 MB), split module/report components, zero lint warnings.
+- Full-repository `ty` and `ruff format` gates in CI.
+- Manual quote-line mapping and ignoring, persisted across re-imports of the same workbook.
 
-Per-project ACLs remain open: every authenticated role can read every project.
-
-- Request IDs, JSON/text application logs, and PydanticAI tracing configured by `FA_TRACING_ENABLED`.
-
-Explicitly **not** implemented from the same list: the `analyze` 503 probe of the model server and auto-detection of the cookie `secure` flag from a public URL (it is env-only; see the P0 table).
+Deliberately not done: per-project ACLs, a secret-manager integration, shipping the audit log or its head hash to an external store, and central log shipping.
 
 ## P0 — blocks real deployment
 
@@ -43,7 +45,7 @@ Explicitly **not** implemented from the same list: the `analyze` 503 probe of th
 | Session security | The `fa_session` cookie used to be set without `secure`, so the session could be replayed over plain HTTP once the app is exposed. | `src/webapp/api.py` (`login` cookie flags), `src/webapp/auth.py:18` (`COOKIE_NAME = "fa_session"`) | Done: `secure` defaults on for `FA_ENV=production` or `FA_PUBLIC_URL=https://…`; explicit `FA_COOKIE_SECURE` overrides either default. | S | Done |
 | Upload limits | `create_project` previously accepted any number of any-size files (suffix check only); a 2 GB PDF or 500 files were rendered page-by-page into `pages/`. | `src/webapp/api.py` (`UploadRequestLimitMiddleware` rejects oversized `Content-Length` before multipart parsing and bounds streamed bodies; `_check_upload_limits` checks `UploadFile.size` before `await f.read()`), `src/webapp/reports.py` (quote per-file check), `FA_MAX_FILES`/`FA_MAX_UPLOAD_MB` → 413 | Done: `FA_MAX_REQUEST_MB` (default 200 MB) enforces a request-body cap on project creation and quote import before multipart parsing for known lengths and while receiving chunked bodies; file-size and file-count limits remain enforced before application reads. | M | Done |
 | Secrets | The app previously loaded `OPENAI_API_KEY` and other secrets from a repo-root `.env` file at startup, exposing them to anyone with repo-directory access. | `src/webapp/api.py` (lifespan; `.env` loading is now development-only) | Done: production never loads `.env` and requires `FA_SESSION_SECRET` from its process environment. Secret-manager integration remains a follow-up; inject secrets through a protected environment source. | S | Done |
-| Health / readiness | No health endpoint existed (now added), and there is still no readiness check of the model server before accepting `analyze`: the job is queued and only fails on its first page when the server is down or the model is not loaded. | `src/webapp/api.py:153-167` (health, public via `src/webapp/auth.py:140`), `src/webapp/api.py:285-299` (analyze queues without probing), `src/webapp/analysis.py:244-247` (first-page abort when the model never answers) | Done: `GET /api/health` → status/model URL/projects-root writability/auth. Remaining: `analyze` returns 503 with the model error when a short `GET {base_url}/models` fails. | S | Partly done |
+| Health / readiness | The public health endpoint reports application/storage state and model URL, but analysis and refine previously accepted work while the model server was down or had no loaded model. | `src/webapp/api.py` (health endpoint and `_probe_model_server`; `analyze` and `refine` probe before writing job/module state) | Done: `analyze` and `refine` issue `GET {FA_API_BASE}/models` with a 5-second timeout and return `503` naming the URL and error on a connection failure, timeout or non-2xx response. Failed probes do not create or change a job or module; a running job answers `409` before the probe. | S | Done |
 | Job durability | Analysis/refine jobs previously lived only in local `asyncio.Task` state and were lost on restart. | `src/webapp/store.py` (`Job.owner`, `heartbeat_at`, `kind`, `refine_module_id` in `job.json`); `src/webapp/api.py` (`_recover_jobs`, `_run_job_with_heartbeat`); `src/webapp/analysis.py` (restart clears modules and reruns analysis) | Done: startup claims stale analysis jobs under the project lock and resumes from a clean module set; interrupted refine jobs become explicit errors and must be started again. | M | Done |
 
 ## P1 — needed before customer-facing use
@@ -70,7 +72,7 @@ Explicitly **not** implemented from the same list: the `analyze` 503 probe of th
 | Legend keys         | `L1..Ln` keys are assigned per parsed module, so the same decor in two modules gets different keys and material-summary rows split.                                                                                                                                                                                                    | `src/furniture/legend.py:67` (`key=f"L{len(materials) + 1}"`), consumed at `src/furniture/resolve.py:423`                                                                                                                 | Deduplicate by normalised material name project-wide.                                                                                                     | S      | Open            |
 | Group titles        | `_group_title` prefers a title containing the code; for groups whose every title is a plain view label the code is shown — acceptable, but the drawing's cabinet caption should win when present.                                                                                                                                      | `src/furniture/pricing.py:95-98`                                                                                                                                                                                          | Prefer the caption when one exists.                                                                                                                       | S      | Open            |
 | Labour in valuation | Process lines are priced only when `labour_rate_per_hour` is set; the model default `None` lists them as unpriced and excludes them from totals. The shipped workspace config carries a placeholder rate nobody has validated, so out-of-the-box valuations are placeholder-priced and the suggested-markup calibration over-suggests. | `src/furniture/pricing.py:29-30` (default), `src/furniture/pricing.py:239` (rate use), `src/furniture/pricing.py:289-295` (unpriced count and oversize note only in `notes`), `config/pricing.yaml:30` (placeholder 90/h) | Show the labour rate and unpriced-part count on the valuation page, not only in notes; mark placeholder rates as unconfirmed (see [Pricing](pricing.md)). | S      | Open            |
-| E2E coverage        | The suite covers happy paths only: analyse, review confirm, edit/history/restore, valuation with pricing, project review/activity, narrow screens. Missing: the 401 flow with auth enabled, a refine that is rejected when the fake model returns a worse draft, and re-analysis archiving history.                                    | `webapp/e2e/main-flows.spec.ts:28-125` (6 tests), fake model `webapp/e2e/fake_llm.py`                                                                                                                                     | Add the three scenarios to the suite.                                                                                                                     | M      | Open            |
+| E2E coverage | The suite now has 10 flows: upload → analysis, review confirm, edit/history/restore, valuation with project pricing, project review/activity, narrow screens, a signed-in viewer (auth enabled), stale-module and report-error recovery, and project rename/delete. Still missing: a refine rejected because the fake model returns a worse draft, and re-analysis archiving history. | `webapp/e2e/main-flows.spec.ts` (10 tests), fake model `webapp/e2e/fake_llm.py` | Add the two remaining scenarios. | S | Partly done |
 | Sample data         | The two committed sample sheets carry the original title blocks and logos — accepted by decision; revisit before the repository goes public.                                                                                                                                                                                           | `samples/GLADIOGROUP_P02_PW-ZM05_12.pdf`, `samples/06_A_METROPILITAN_NRF-zabudowy meblowe_widoki.pdf`                                                                                                                     | None now; re-evaluate at public launch.                                                                                                                   | S      | Open (accepted) |
 
 ## Reasoning gaps
