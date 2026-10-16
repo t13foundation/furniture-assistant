@@ -19,10 +19,10 @@ from typing import Annotated, Any, Literal
 import httpx
 from config.settings import AppConfig
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 from src.furniture.export import write_cut_list_csv, write_cut_list_xlsx, write_panels_dxf, write_sheets_svg
 from src.furniture.resolve import (
@@ -151,6 +151,10 @@ class HealthResponse(BaseModel):
     auth_enabled: bool
 
 
+class ProjectNameBody(BaseModel):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
+
+
 class ProjectListResponse(Project):
     job_status: str | None
     module_count: int
@@ -241,6 +245,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 app = FastAPI(title="Furniture Assistant", lifespan=lifespan)
 app.middleware("http")(auth_middleware)
 app.add_middleware(UploadRequestLimitMiddleware)
+
+
+@app.exception_handler(ProjectNotFoundError)
+async def project_not_found(_request: Request, exc: ProjectNotFoundError) -> JSONResponse:
+    """A project deleted (moved to the trash) while a request waited for its lock."""
+    return JSONResponse(status_code=404, content={"detail": f"Unknown project {exc.args[0]}"})
+
+
 # Before this module's routes: /export/valuation.xlsx must win over the generic /export/{fmt}.
 app.include_router(reports.router)
 
@@ -570,6 +582,30 @@ async def _check_upload_limits(files: list[UploadFile]) -> None:
         await check_file_size(file, max_mb)
 
 
+@app.patch("/api/projects/{project_id}", response_model=Project)
+def rename_project(request: Request, project_id: str, body: ProjectNameBody) -> Project:
+    store = _store(request)
+    _require_project(store, project_id)
+    with store.lock(project_id):
+        project = store.rename_project(project_id, body.name)
+        store.append_audit(project_id, "rename_project", request.state.username, detail=project.name)
+    return project
+
+
+@app.delete("/api/projects/{project_id}", status_code=204)
+def delete_project(request: Request, project_id: str) -> Response:
+    store = _store(request)
+    _require_project(store, project_id)
+    with store.lock(project_id):
+        _require_project(store, project_id)
+        # The persisted job (any worker's) decides: job start reserves job.json under this same lock.
+        if _job_fresh(store.load_job(project_id)):
+            raise HTTPException(409, "Cannot delete a project while analysis or model re-run is in progress")
+        trashed_project = store.move_project_to_trash(project_id)
+        store.append_audit_in_directory(project_id, trashed_project, "delete_project", request.state.username)
+    return Response(status_code=204)
+
+
 async def _probe_model_server(request: Request) -> None:
     config = request.app.state.config
     base_url = config.api.base_url.rstrip("/")
@@ -608,6 +644,7 @@ async def analyze(request: Request, project_id: str) -> StatusResponse:
 
     def reserve() -> str:
         with store.lock(project_id):
+            _require_project(store, project_id)  # deleted while we waited for the lock → 404
             current = store.load_job(project_id)
             if current is not None and _job_fresh(current):
                 raise HTTPException(
@@ -886,6 +923,7 @@ async def refine(request: Request, project_id: str, module_id: str) -> StatusRes
 
     def reserve() -> str:
         with store.lock(project_id):
+            _require_project(store, project_id)  # deleted while we waited for the lock → 404
             active = store.load_job(project_id)
             if _job_fresh(active):
                 raise HTTPException(409, "Analysis or model re-run already running")

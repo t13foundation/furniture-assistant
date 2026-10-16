@@ -16,6 +16,7 @@ import fcntl
 import json
 import os
 import secrets
+import shutil
 import tempfile
 import threading
 import time
@@ -154,8 +155,14 @@ class ProjectLock(AbstractContextManager["ProjectLock"]):
         if depth == 0:
             stream = None
             try:
-                stream = (self.directory / ".lock").open("a")
+                try:
+                    stream = (self.directory / ".lock").open("a")
+                except FileNotFoundError:
+                    raise ProjectNotFoundError(self.directory.name) from None
                 fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+                # The project may have been moved to the trash while this thread waited for the lock.
+                if not self.directory.is_dir():
+                    raise ProjectNotFoundError(self.directory.name)
             except BaseException:
                 if stream is not None:
                     stream.close()
@@ -232,6 +239,21 @@ class ProjectStore:
 
     def load_project(self, project_id: str) -> Project:
         return Project.model_validate_json((self.project_dir(project_id) / "project.json").read_text(encoding="utf-8"))
+
+    def rename_project(self, project_id: str, name: str) -> Project:
+        with self.lock(project_id):
+            project = self.load_project(project_id)
+            project.name = name
+            _write_atomic(self.project_dir(project_id) / "project.json", project.model_dump_json(indent=2))
+            return project
+
+    def move_project_to_trash(self, project_id: str) -> Path:
+        source = self.project_dir(project_id)
+        trash = self.root.parent / "trash"
+        trash.mkdir(parents=True, exist_ok=True)
+        destination = trash / f"{source.name}-{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+        shutil.move(str(source), str(destination))
+        return destination
 
     def upload_path(self, project_id: str, file_index: int) -> Path:
         project = self.load_project(project_id)
@@ -329,16 +351,31 @@ class ProjectStore:
         self, project_id: str, action: str, user: str | None, module_id: str | None = None, detail: str | None = None
     ) -> None:
         with self.lock(project_id):
-            path = self.project_dir(project_id) / "audit.jsonl"
-            entry = {
-                "at": now_iso(),
-                "user": user or "system",
-                "action": action,
-                "module_id": module_id,
-                "detail": detail,
-            }
-            with path.open("a", encoding="utf-8") as stream:
-                stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            self._append_audit(self.project_dir(project_id) / "audit.jsonl", action, user, module_id, detail)
+
+    def append_audit_in_directory(
+        self,
+        project_id: str,
+        directory: Path,
+        action: str,
+        user: str | None,
+        module_id: str | None = None,
+        detail: str | None = None,
+    ) -> None:
+        with self.lock(project_id):
+            self._append_audit(directory / "audit.jsonl", action, user, module_id, detail)
+
+    @staticmethod
+    def _append_audit(path: Path, action: str, user: str | None, module_id: str | None, detail: str | None) -> None:
+        entry = {
+            "at": now_iso(),
+            "user": user or "system",
+            "action": action,
+            "module_id": module_id,
+            "detail": detail,
+        }
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     def list_activity(self, project_id: str) -> list[ActivityEntry]:
         """Newest first."""
