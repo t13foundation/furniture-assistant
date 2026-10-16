@@ -14,7 +14,6 @@ import type {
   ProjectPricing,
   Valuation,
 } from './types'
-import { DataTable } from './ReportShared'
 
 const FilesReport = lazy(() => import('./FilesReport'))
 const MaterialsReport = lazy(() => import('./MaterialsReport'))
@@ -297,11 +296,14 @@ export function PricingSettings() {
     setQuoteError('')
     try {
       const projectId = id
-      const value = await api<QuoteComparison>(`/api/projects/${encodeURIComponent(projectId)}/quote/assignments`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ line_index: lineIndex, label, module_ids: moduleIds, ignored }),
-      })
+      const value = await api<QuoteComparison>(
+        `/api/projects/${encodeURIComponent(projectId)}/quote/assignments`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ line_index: lineIndex, label, module_ids: moduleIds, ignored }),
+        },
+      )
       if (currentProjectId.current === projectId) setQuoteState({ projectId, value })
     } catch (e) {
       if (currentProjectId.current === id)
@@ -310,7 +312,6 @@ export function PricingSettings() {
       assignmentSaving.current = false
       setSavingAssignment(false)
     }
-
   }
   const revertPricing = async () => {
     if (!id) return
@@ -538,9 +539,18 @@ export function PricingSettings() {
                   <table>
                     <thead>
                       <tr>
-                        {['Code', 'Quote item', 'Quote', 'App', 'Ratio', 'Modules', 'Assign modules', 'Ignore'].map(
-                          (header) => <th key={header}>{header}</th>,
-                        )}
+                        {[
+                          'Code',
+                          'Quote item',
+                          'Quote',
+                          'App',
+                          'Ratio',
+                          'Modules',
+                          'Assign modules',
+                          'Ignore',
+                        ].map((header) => (
+                          <th key={header}>{header}</th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
@@ -557,14 +567,16 @@ export function PricingSettings() {
                             <td>
                               {row.module_ids.length
                                 ? `${row.module_ids.join(', ')}${row.complete ? '' : ' (incomplete or partly unpriced)'}`
-                                : row.match === 'ignored' ? 'ignored' : 'no matching module'}
+                                : row.match === 'ignored'
+                                  ? 'ignored'
+                                  : 'no matching module'}
                             </td>
                             <td>
                               <select
                                 aria-label={`Modules for ${row.label}`}
                                 multiple
                                 value={selected}
-                                disabled={ignored || savingAssignment || !detail?.modules.length}
+                                disabled={ignored || savingAssignment || !currentDetail?.modules.length}
                                 onChange={(event) =>
                                   void saveQuoteAssignment(
                                     row.line_index,
@@ -574,7 +586,7 @@ export function PricingSettings() {
                                   )
                                 }
                               >
-                                {(detail?.modules ?? []).map((module) => (
+                                {(currentDetail?.modules ?? []).map((module) => (
                                   <option key={module.module_id} value={module.module_id}>
                                     {module.group_id} · {module.title || module.module_id}
                                   </option>

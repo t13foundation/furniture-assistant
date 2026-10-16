@@ -19,7 +19,10 @@ async function reviewCount(page: Page): Promise<number> {
 async function ensureProjectUrl(page: Page) {
   if (!projectUrl) {
     await page.goto('/')
-    await page.getByRole('link', { name: /E2E szafa/ }).first().click()
+    await page
+      .getByRole('link', { name: /E2E szafa/ })
+      .first()
+      .click()
     projectUrl = page.url()
   }
 }
