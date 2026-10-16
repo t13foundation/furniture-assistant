@@ -11,14 +11,13 @@ make web WEB_PORT=8010  # serve API + built frontend (default port 8000)
 
 `make web` runs `uv run uvicorn src.webapp.api:app --host 127.0.0.1 --port $(WEB_PORT)`. For production, drop `--reload` and run under a supervisor (example below). The backend serves the built frontend from `webapp/dist`; `make web-ui` (Vite on :5173) is for frontend development only.
 
-## Single process only
+## Process and host constraints
 
-The app must run as **exactly one uvicorn worker and one replica**:
+Multiple uvicorn workers on **one host** may share a projects root: project read-modify-write operations use a reentrant thread lock plus an exclusive `fcntl.flock` on each project's `.lock` file. Async job paths acquire and hold that lock in worker threads, not on the event loop. Job intent, owner (`host:pid`), per-run claim token and heartbeat are persisted in `job.json`; stale runners are fenced from later job/module writes.
 
-- `ProjectStore` serialises read-modify-write per project with in-process `threading.RLock` instances (`src/webapp/store.py`) — a second process would have its own lock set and races would corrupt module files.
-- Analysis and refine jobs are `asyncio.Task` objects in `app.state.tasks` (`src/webapp/api.py`) — a second process would not see them, and both would accept the same job.
+Multiple hosts are supported only when they use the same shared projects filesystem and that filesystem provides reliable cross-host `flock` semantics plus atomic rename. Separate local disks and filesystems that do not honor `flock` are not supported. Workspace pricing updates have their own lock. User-file changes are performed by the CLI, not by API workers.
 
-Do not pass `--workers N`, and do not scale to multiple replicas behind a load balancer. All durable state is plain files (see [Storage and backups](#storage-and-backups)), so this constraint is about locks and job tracking, not data location.
+Project creation uses exclusive directory creation to avoid replacing an existing project if generated identifiers collide.
 
 ## Model server
 
@@ -79,7 +78,11 @@ File types for project uploads are restricted to drawing formats (PDF/PNG/JPG/TI
 
 ## Jobs across restarts
 
-Jobs live in memory only. On restart, a job left `queued`/`running` is reported as `error` ("Analysis interrupted (server restarted)") the next time the project is read, with an audit entry; the user re-runs the analysis from the UI. Already-built modules, history and overrides survive — only the in-flight run is lost.
+`job.json` stores job kind, owner (`host:pid`), per-run claim token, UTC heartbeat, status and per-page progress. A worker refreshes the heartbeat every five seconds; startup and job reads claim an analysis whose owner is dead or whose heartbeat is older than 30 seconds under the project lock. It audits `analyze_resume`, archives old module history, clears current modules and reruns the analysis from the beginning. This deliberately favors a clean, duplicate-free result over replaying a partially completed page; existing page records are not used to skip work.
+
+All hosts sharing the project filesystem must keep their clocks synchronized; keep clock skew well below the 30-second stale threshold (preferably under five seconds). UTC-aware heartbeats are stored for new jobs; legacy naive timestamps are interpreted in the server's local timezone, then converted to UTC.
+
+An interrupted refine is **not** retried automatically: startup or a job read marks its job and module refine status as `error`, adds a `refine_interrupted` audit entry, and the user can explicitly request the refine again. This avoids silently repeating a model call after its outcome may have been partially applied. Fresh jobs owned by another worker remain `running`, and concurrent analyze/refine requests receive HTTP 409.
 
 ## Storage and backups
 
@@ -126,4 +129,4 @@ Restart=on-failure
 WantedBy=multi-user.target
 ```
 
-Replace the placeholder session secret with a protected credential source before deployment. One worker (no `--workers` flag), one replica. `OPENAI_API_KEY` must also be injected through the service environment or credential mechanism; production never reads it from `.env`.
+Replace the placeholder session secret with a protected credential source before deployment. Multiple workers are supported on one host. Multiple hosts require a shared projects filesystem with working cross-host `flock` and atomic rename semantics (see [Process and host constraints](#process-and-host-constraints)). `OPENAI_API_KEY` must also be injected through the service environment or credential mechanism; production never reads it from `.env`.

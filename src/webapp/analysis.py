@@ -32,7 +32,7 @@ from src.furniture.resolve import (
 from src.furniture.rules import ConstructionRules
 from src.furniture.schema import DimensionMark, FurnitureModule, ModuleDraft, ModuleModel
 from src.schema.enums import DrawingType
-from src.webapp.store import Job, JobItem, ProjectStore, now_iso
+from src.webapp.store import JobItem, JobSupersededError, ProjectStore, now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +132,16 @@ def apply_refined(
     return rebuild(candidate, rules, **{**state, "draft": new_draft})
 
 
+def _fenced(store: ProjectStore, project_id: str, claim_token: str, operation):
+    with store.lock(project_id):
+        store._check_job_claim(project_id, claim_token)
+        return operation()
+
+
+async def _fenced_async(store: ProjectStore, project_id: str, claim_token: str, operation):
+    return await asyncio.to_thread(_fenced, store, project_id, claim_token, operation)
+
+
 async def refine_and_save(
     store: ProjectStore,
     project_id: str,
@@ -139,13 +149,10 @@ async def refine_and_save(
     agent: Agent[None, ModuleDraft],
     png_path: Path,
     rules: ConstructionRules,
+    claim_token: str,
 ) -> None:
-    """Ask the model again about the module's open questions, then merge under the project lock.
-
-    The model call runs without the lock; edits the user makes meanwhile are kept because the result
-    is applied to the module as stored at that moment.
-    """
-    model = store.load_module(project_id, module_id)
+    """Ask the model again and merge the result only while this run owns the project claim."""
+    model = await asyncio.to_thread(store.load_module, project_id, module_id)
     new_draft, error = None, None
     try:
         if model.draft is None:
@@ -155,20 +162,31 @@ async def refine_and_save(
     except Exception as exc:
         logger.exception("Refining %s/%s failed", project_id, module_id)
         error = f"{type(exc).__name__}: {exc}"
-    with store.lock(project_id):
+
+    def save() -> None:
         try:
             latest = store.load_module(project_id, module_id)
         except KeyError:
-            return  # removed meanwhile (project re-analysed)
-        store.save_module(project_id, apply_refined(latest, new_draft, rules, error), action="refine")
+            return
+        store.save_module(
+            project_id, apply_refined(latest, new_draft, rules, error), action="refine", claim_token=claim_token
+        )
         store.append_audit(project_id, "refine_finish", "system", module_id, error and f"Error: {error}")
 
+    await _fenced_async(store, project_id, claim_token, save)
 
-def recheck_project(store: ProjectStore, project_id: str, rules: ConstructionRules) -> None:
-    """Cross-check modules drawn on several pages/files and rebuild the ones that changed (hold the lock)."""
+
+def recheck_project(
+    store: ProjectStore, project_id: str, rules: ConstructionRules, claim_token: str | None = None
+) -> None:
+    """Cross-check modules drawn on several pages/files (hold the project lock)."""
     models = {m.module.module_id: m for m in store.list_modules(project_id)}
     for module_id, module in cross_drawing_checks(list(models.values())).items():
-        store.save_module(project_id, rebuild(module, rules, **module_state(models[module_id])))
+        store.save_module(
+            project_id,
+            rebuild(module, rules, **module_state(models[module_id])),
+            claim_token=claim_token,
+        )
 
 
 def _file_index(store: ProjectStore, project_id: str, file_name: str) -> int:
@@ -176,59 +194,80 @@ def _file_index(store: ProjectStore, project_id: str, file_name: str) -> int:
 
 
 async def refine_stored_module(
-    store: ProjectStore, project_id: str, module_id: str, config: AppConfig, rules: ConstructionRules
+    store: ProjectStore,
+    project_id: str,
+    module_id: str,
+    config: AppConfig,
+    rules: ConstructionRules,
+    claim_token: str,
 ) -> None:
-    """Background job behind the "Ask the model again" button (``refine_status`` is already running)."""
+    """Background job behind the "Ask the model again" button."""
     try:
-        model = store.load_module(project_id, module_id)
+        model = await asyncio.to_thread(store.load_module, project_id, module_id)
         agent = create_refine_agent(config.models.orchestrator, config.api.base_url, config.api.api_key)
-        file_index = _file_index(store, project_id, model.module.file_name)
+        file_index = await asyncio.to_thread(_file_index, store, project_id, model.module.file_name)
         png_path = await asyncio.to_thread(
             store.page_png, project_id, file_index, model.module.page_index, config.document
         )
     except Exception as exc:
         logger.exception("Refining %s/%s could not start", project_id, module_id)
-        with store.lock(project_id):
+        error_message = f"{type(exc).__name__}: {exc}"
+
+        def mark_refine_error() -> None:
             latest = store.load_module(project_id, module_id)
             store.save_module(
-                project_id, apply_refined(latest, None, rules, f"{type(exc).__name__}: {exc}"), action="refine"
+                project_id,
+                apply_refined(latest, None, rules, error_message),
+                action="refine",
+                claim_token=claim_token,
             )
-            store.append_audit(project_id, "refine_finish", "system", module_id, f"Error: {exc}")
+            store.append_audit(project_id, "refine_finish", "system", module_id, f"Error: {error_message}")
+
+        await _fenced_async(store, project_id, claim_token, mark_refine_error)
         return
-    await refine_and_save(store, project_id, module_id, agent, png_path, rules)
-    with store.lock(project_id):
-        recheck_project(store, project_id, rules)
+    await refine_and_save(store, project_id, module_id, agent, png_path, rules, claim_token)
+    await _fenced_async(store, project_id, claim_token, lambda: recheck_project(store, project_id, rules, claim_token))
 
 
-async def run_analysis(project_id: str, store: ProjectStore, config: AppConfig, rules: ConstructionRules) -> None:
-    job = Job(status="running", started_at=now_iso())
-    with store.lock(project_id):
-        store.save_job(project_id, job)
+async def run_analysis(
+    project_id: str, store: ProjectStore, config: AppConfig, rules: ConstructionRules, claim_token: str
+) -> None:
+    job = await asyncio.to_thread(store.load_job, project_id)
+    if job is None:
+        raise JobSupersededError(f"Job claim for project {project_id} is missing")
+    job.status, job.started_at, job.finished_at, job.error = "running", job.started_at or now_iso(), None, None
+
+    def start_job() -> None:
+        store.save_job(project_id, job, claim_token=claim_token)
+        # Resume from a clean module set: a page may have partially written before its checkpoint.
+        store.clear_modules(project_id, claim_token=claim_token)
+
+    await _fenced_async(store, project_id, claim_token, start_job)
     try:
-        with store.lock(project_id):
-            store.clear_modules(project_id)
-        job.items = plan_items(store, project_id)
-        with store.lock(project_id):
-            store.save_job(project_id, job)
+        job.items = await asyncio.to_thread(plan_items, store, project_id)
+        await _fenced_async(store, project_id, claim_token, lambda: store.save_job(project_id, job, claim_token))
         model_args = (config.models.orchestrator, config.api.base_url, config.api.api_key)
         agent = create_interpretation_agent(*model_args)
         refine_agent = create_refine_agent(*model_args)
     except Exception as exc:
         logger.exception("Analysis of %s could not start", project_id)
         job.status, job.error, job.finished_at = "error", str(exc), now_iso()
-        with store.lock(project_id):
-            store.save_job(project_id, job)
-            store.append_audit(project_id, "analyze_finish", "system", detail=f"Error: {exc}")
+        error_message = str(exc)
+
+        def save_start_error() -> None:
+            store.save_job(project_id, job, claim_token)
+            store.append_audit(project_id, "analyze_finish", "system", detail=f"Error: {error_message}")
+
+        await _fenced_async(store, project_id, claim_token, save_start_error)
         return
 
-    project = store.load_project(project_id)
+    project = await asyncio.to_thread(store.load_project, project_id)
     agent_succeeded = False
     for item in job.items:
         if item.status != "pending":
             continue
         item.status = "running"
-        with store.lock(project_id):
-            store.save_job(project_id, job)
+        await _fenced_async(store, project_id, claim_token, lambda: store.save_job(project_id, job, claim_token))
         file = project.files[item.file_index]
         path = store.upload_path(project_id, item.file_index)
         try:
@@ -243,7 +282,7 @@ async def run_analysis(project_id: str, store: ProjectStore, config: AppConfig, 
                 draft = await interpret_page(agent, image_png, marks, chains, runs, page_units)
             except Exception as exc:
                 if not agent_succeeded:
-                    # The model never answered: the run itself cannot work (server down, model not loaded).
+                    # No model response means the run cannot proceed (server down or model unloaded).
                     raise _RunAbortedError(str(exc)) from exc
                 raise
             agent_succeeded = True
@@ -252,31 +291,49 @@ async def run_analysis(project_id: str, store: ProjectStore, config: AppConfig, 
                 module = resolve_module(
                     module_draft, marks, chains, units, file.name, item.page_index, rules, texts=runs
                 )
-                with store.lock(project_id):
+
+                def save_module(module=module, module_draft=module_draft) -> None:
                     module.module_id = store.unique_module_id(project_id, module.module_id)
-                    store.save_module(project_id, rebuild(module, rules, draft=module_draft), action="analysis")
+                    store.save_module(
+                        project_id,
+                        rebuild(module, rules, draft=module_draft),
+                        action="analysis",
+                        claim_token=claim_token,
+                    )
+
+                await _fenced_async(store, project_id, claim_token, save_module)
                 if needs_refine(module):
-                    # Feedback loop: one focused model re-run on what the first pass left open.
-                    await refine_and_save(store, project_id, module.module_id, refine_agent, png_path, rules)
+                    await refine_and_save(
+                        store, project_id, module.module_id, refine_agent, png_path, rules, claim_token
+                    )
                 item.module_ids.append(module.module_id)
             item.status = "done"
         except _RunAbortedError as exc:
             logger.error("Analysis of %s aborted: %s", project_id, exc)
             item.status, item.error = "error", str(exc)
-            with store.lock(project_id):
-                store.save_job(project_id, job)
-                store.append_audit(project_id, "analyze_finish", "system", detail=f"Error: {exc}")
+            job.status, job.error, job.finished_at = "error", str(exc), now_iso()
+            error_message = str(exc)
+
+            def save_aborted(error_message=error_message) -> None:
+                store.save_job(project_id, job, claim_token)
+                store.append_audit(project_id, "analyze_finish", "system", detail=f"Error: {error_message}")
+
+            await _fenced_async(store, project_id, claim_token, save_aborted)
             return
+        except JobSupersededError:
+            raise
         except Exception as exc:
             logger.exception("Page %s/%s of %s failed", file.name, item.page_index, project_id)
             item.status, item.error = "error", f"{type(exc).__name__}: {exc}"
-        with store.lock(project_id):
-            store.save_job(project_id, job)
-    with store.lock(project_id):
-        recheck_project(store, project_id, rules)
+        await _fenced_async(store, project_id, claim_token, lambda: store.save_job(project_id, job, claim_token))
+
+    def finish() -> None:
+        recheck_project(store, project_id, rules, claim_token)
         job.status, job.finished_at = "done", now_iso()
-        store.save_job(project_id, job)
+        store.save_job(project_id, job, claim_token)
         store.append_audit(project_id, "analyze_finish", "system")
+
+    await _fenced_async(store, project_id, claim_token, finish)
 
 
 class _RunAbortedError(RuntimeError):
