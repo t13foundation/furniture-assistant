@@ -24,6 +24,7 @@ Done in this release (each covered by tests in `tests/test_webapp_improvements.p
 - Production does not load `.env`, requires `FA_SESSION_SECRET`, and cannot create the development fallback secret file.
 - Upload limits: `FA_MAX_REQUEST_MB` total request, `FA_MAX_UPLOAD_MB` per file and `FA_MAX_FILES` per project; oversized bodies are rejected before buffering.
 - Public `GET /api/health` endpoint (exempt from auth), reporting model URL, projects-root writability and auth state.
+- Model-server readiness: `analyze` and module `refine` probe `GET {FA_API_BASE}/models` before starting work; failures return HTTP 503 without queuing or changing project/module state.
 - React `ErrorBoundary` around the router, so a render error shows a "Reload" page instead of a blank screen.
 - `WEB_PORT` Makefile variable (`make web WEB_PORT=8010`).
 
