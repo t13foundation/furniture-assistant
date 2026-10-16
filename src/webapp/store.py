@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import secrets
+import shutil
 import tempfile
 import threading
 import time
@@ -158,8 +159,14 @@ class ProjectLock(AbstractContextManager["ProjectLock"]):
         if depth == 0:
             stream = None
             try:
-                stream = (self.directory / ".lock").open("a")
+                try:
+                    stream = (self.directory / ".lock").open("a")
+                except FileNotFoundError:
+                    raise ProjectNotFoundError(self.directory.name) from None
                 fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+                # The project may have been moved to the trash while this thread waited for the lock.
+                if not self.directory.is_dir():
+                    raise ProjectNotFoundError(self.directory.name)
             except BaseException:
                 if stream is not None:
                     stream.close()
@@ -236,6 +243,21 @@ class ProjectStore:
 
     def load_project(self, project_id: str) -> Project:
         return Project.model_validate_json((self.project_dir(project_id) / "project.json").read_text(encoding="utf-8"))
+
+    def rename_project(self, project_id: str, name: str) -> Project:
+        with self.lock(project_id):
+            project = self.load_project(project_id)
+            project.name = name
+            _write_atomic(self.project_dir(project_id) / "project.json", project.model_dump_json(indent=2))
+            return project
+
+    def move_project_to_trash(self, project_id: str) -> Path:
+        source = self.project_dir(project_id)
+        trash = self.root.parent / "trash"
+        trash.mkdir(parents=True, exist_ok=True)
+        destination = trash / f"{source.name}-{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+        shutil.move(str(source), str(destination))
+        return destination
 
     def upload_path(self, project_id: str, file_index: int) -> Path:
         project = self.load_project(project_id)
@@ -333,60 +355,78 @@ class ProjectStore:
         self, project_id: str, action: str, user: str | None, module_id: str | None = None, detail: str | None = None
     ) -> None:
         with self.lock(project_id):
-            directory = self.project_dir(project_id)
-            path = directory / "audit.jsonl"
-            project = self.load_project(project_id)
-            initialized = project.audit_chain_since is None
-            if initialized:
-                raw = path.read_bytes() if path.exists() else b""
-                try:
-                    checkpoint = checkpoint_for_existing_log(raw)
-                except ValueError as exc:
-                    raise ValueError(f"cannot extend invalid audit chain: {exc}") from None
-                if checkpoint is None:
-                    lines = raw.splitlines(keepends=True)
-                    project.audit_chain_since = len(lines) + 1
-                    prefix = raw + (b"\n" if raw and not raw.endswith(b"\n") else b"")
-                    project.audit_legacy_hash = hashlib.sha256(prefix).hexdigest() if prefix else "0" * 64
-                else:
-                    project.audit_chain_since, project.audit_legacy_hash = checkpoint
-            if project.audit_chain_since is not None and project.audit_legacy_hash is None:
-                raise ValueError("audit chain checkpoint is incomplete")
-            last, terminated = last_audit_record(path)
-            if last is None:
-                previous = project.audit_legacy_hash or "0" * 64
-                if project.audit_chain_since == 1:
-                    previous = "0" * 64
-            elif "hash" in last:
-                previous = last["hash"]
-                payload = {key: value for key, value in last.items() if key != "hash"}
-                if (
-                    not isinstance(previous, str)
-                    or not isinstance(last.get("prev_hash"), str)
-                    or entry_hash(payload) != previous
-                ):
-                    raise ValueError("audit log final record hash is invalid")
-            elif initialized:
-                previous = project.audit_legacy_hash or "0" * 64
+            self._append_audit(self.project_dir(project_id), action, user, module_id, detail)
+
+    def append_audit_in_directory(
+        self,
+        project_id: str,
+        directory: Path,
+        action: str,
+        user: str | None,
+        module_id: str | None = None,
+        detail: str | None = None,
+    ) -> None:
+        """Chain an audit record into a project directory that has left the projects root (e.g. the trash)."""
+        with self.lock(project_id):
+            self._append_audit(directory, action, user, module_id, detail)
+
+    @staticmethod
+    def _append_audit(
+        directory: Path, action: str, user: str | None, module_id: str | None, detail: str | None
+    ) -> None:
+        path = directory / "audit.jsonl"
+        project = Project.model_validate_json((directory / "project.json").read_text(encoding="utf-8"))
+        initialized = project.audit_chain_since is None
+        if initialized:
+            raw = path.read_bytes() if path.exists() else b""
+            try:
+                checkpoint = checkpoint_for_existing_log(raw)
+            except ValueError as exc:
+                raise ValueError(f"cannot extend invalid audit chain: {exc}") from None
+            if checkpoint is None:
+                lines = raw.splitlines(keepends=True)
+                project.audit_chain_since = len(lines) + 1
+                prefix = raw + (b"\n" if raw and not raw.endswith(b"\n") else b"")
+                project.audit_legacy_hash = hashlib.sha256(prefix).hexdigest() if prefix else "0" * 64
             else:
-                raise ValueError("audit log final record is unhashed after chain start")
-            entry = {
-                "at": now_iso(),
-                "user": user or "system",
-                "action": action,
-                "module_id": module_id,
-                "detail": detail,
-                "prev_hash": previous,
-            }
-            entry["hash"] = entry_hash(entry)
-            with path.open("ab") as stream:
-                if last is not None and not terminated:
-                    stream.write(b"\n")
-                stream.write(
-                    json.dumps(entry, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
-                )
-            if initialized:
-                _write_atomic(directory / "project.json", project.model_dump_json(indent=2))
+                project.audit_chain_since, project.audit_legacy_hash = checkpoint
+        if project.audit_chain_since is not None and project.audit_legacy_hash is None:
+            raise ValueError("audit chain checkpoint is incomplete")
+        last, terminated = last_audit_record(path)
+        if last is None:
+            previous = project.audit_legacy_hash or "0" * 64
+            if project.audit_chain_since == 1:
+                previous = "0" * 64
+        elif "hash" in last:
+            previous = last["hash"]
+            payload = {key: value for key, value in last.items() if key != "hash"}
+            if (
+                not isinstance(previous, str)
+                or not isinstance(last.get("prev_hash"), str)
+                or entry_hash(payload) != previous
+            ):
+                raise ValueError("audit log final record hash is invalid")
+        elif initialized:
+            previous = project.audit_legacy_hash or "0" * 64
+        else:
+            raise ValueError("audit log final record is unhashed after chain start")
+        entry = {
+            "at": now_iso(),
+            "user": user or "system",
+            "action": action,
+            "module_id": module_id,
+            "detail": detail,
+            "prev_hash": previous,
+        }
+        entry["hash"] = entry_hash(entry)
+        with path.open("ab") as stream:
+            if last is not None and not terminated:
+                stream.write(b"\n")
+            stream.write(
+                json.dumps(entry, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
+            )
+        if initialized:
+            _write_atomic(directory / "project.json", project.model_dump_json(indent=2))
 
     @staticmethod
     def list_activity_snapshot(snapshot: bytes) -> list[ActivityEntry]:

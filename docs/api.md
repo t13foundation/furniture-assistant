@@ -26,8 +26,10 @@ Auth is enabled as soon as the users file (`FA_USERS_FILE`, default `config/user
 | GET | `/api/projects` | — | `ProjectListResponse[]` — project fields plus `job_status`, `module_count` | cookie |
 | POST | `/api/projects` | multipart `files[]` + form `name` | `201 {id}` | cookie |
 | GET | `/api/projects/{project_id}` | — | `ProjectDetailResponse {project, job, usage, modules}` | cookie |
+| PATCH | `/api/projects/{project_id}` | `ProjectNameBody {name}` (trimmed, 1–120 characters) | `Project` | cookie |
+| DELETE | `/api/projects/{project_id}` | — | `204`; moves project to trash | cookie |
 
-Project and quote uploads are capped by `FA_MAX_REQUEST_MB` (default 200 MB, total multipart body) and rejected with `413` before parsing when `Content-Length` exceeds the cap. Requests streamed without `Content-Length` are capped as chunks arrive. Project uploads also enforce `FA_MAX_UPLOAD_MB` (default 50 MB per file) and `FA_MAX_FILES` (default 50 files); these limits return `413`. Quote imports enforce the same per-file cap.
+Uploads accept the drawing extensions `.pdf .tif .tiff .png .jpg .jpeg .dwg .p3d`. Project and quote uploads are capped by `FA_MAX_REQUEST_MB` (default 200 MB, total multipart body) and rejected with `413` before parsing when `Content-Length` exceeds the cap. Requests streamed without `Content-Length` are capped as chunks arrive. Project uploads also enforce `FA_MAX_UPLOAD_MB` (default 50 MB per file) and `FA_MAX_FILES` (default 50 files); these limits return `413`. Quote imports enforce the same per-file cap.
 
 The detail response is the polling endpoint: `job` is the current job — the analysis, or a manual "Ask the model again" run (`status` `queued → running → done | error`, per-page `items` with `pending/running/done/skipped/error` and produced `module_ids`) — and `modules` lists every module with `status`, `question_count`, `attention_count`, `refine_status` and error/warning `issue_counts`. `job.usage` is the token/request total of that job, with `job.usage_breakdown` grouped by page and module; top-level `usage` is the cumulative project total across all jobs. Estimated cost is `null` unless both model input and output rates are configured, and is computed from the stored token totals at the current rates. Reading a stale `queued`/`running` job claims and resumes an analysis from the beginning; an interrupted refine is reported as `error` and must be started again.
 
@@ -119,7 +121,7 @@ The upload is stored as `quote.xlsx` (original) and `quote.json` (parsed lines) 
 | 400 | upload with no files or an unsupported extension; client quote that is not `.xlsx` |
 | 401 | missing/expired session on a non-public path; wrong credentials at login |
 | 404 | unknown project, module, version or page; no client quote uploaded yet |
-| 409 | `analyze` while an analysis or model re-run is in flight; `refine` while one is already running or the project is being analysed |
+| 409 | `analyze` while an analysis or model re-run is in flight; `refine` while one is already running or the project is being analysed; project deletion while a job is running |
 | 413 | a request exceeds `FA_MAX_REQUEST_MB`, a file exceeds `FA_MAX_UPLOAD_MB`, or more than `FA_MAX_FILES` files are uploaded to one project |
 | 422 | request validation; module assembly errors on PUT/answers (e.g. an override a module cannot take); refine on a hand-made module (no model interpretation); unreadable quote workbook |
 | 429 | login throttled (5 failures per ip+username within 15 min → 5 min lock) |
