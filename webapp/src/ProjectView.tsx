@@ -178,7 +178,9 @@ export default function ProjectView() {
     detail?.job?.items.filter((item) => ['done', 'skipped', 'error'].includes(item.status)).length ?? 0
   const total = detail?.job?.items.length ?? 0
   const selectedModel =
-    model?.module.module_id === selectedModuleId && loadedKey === `${id}:${selectedModuleId}:${location.key}` ? model : null
+    model?.module.module_id === selectedModuleId && loadedKey === `${id}:${selectedModuleId}:${location.key}`
+      ? model
+      : null
   return (
     <div className="project-layout">
       <ProjectSidebar id={id} detail={detail} moduleId={selectedModuleId} />
@@ -314,7 +316,7 @@ export function ProjectSidebar({
               <input
                 aria-label="Project name"
                 maxLength={120}
-                value={projectName?.id === id ? projectName.name : detail?.project.name ?? ''}
+                value={projectName?.id === id ? projectName.name : (detail?.project.name ?? '')}
                 onChange={(event) => setProjectName({ id, name: event.target.value })}
               />
               <button className="button primary" onClick={() => void saveProjectName()}>
