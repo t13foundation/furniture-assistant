@@ -9,6 +9,7 @@ from pathlib import Path
 from config.agent_prompts import EXPLORATION_PROMPT, SUMMARIZE_PROMPT, VALIDATION_DIFF_PROMPT
 from config.settings import AppConfig, TracingConfig
 from pydantic_ai.messages import BinaryContent
+from pydantic_ai.models.instrumented import InstrumentationSettings
 from pydantic_ai.usage import UsageLimits
 
 from src.pipeline.agent import (
@@ -33,6 +34,7 @@ from src.schema.validation import (
     normalize_values,
     validate_result,
 )
+from src.telemetry import tracing_instrumentation_settings
 from src.tools.cache import ToolCache
 from src.vision.client import VisionClient
 
@@ -155,6 +157,7 @@ class DrawingPipeline:
         self._langfuse = None
         self._current_span = None
         self._current_span_context = None
+        self._instrumentation: InstrumentationSettings | bool = False
 
         # Create vision client if a separate vision model is configured.
         vision_model = config.models.vision
@@ -205,7 +208,6 @@ class DrawingPipeline:
         """Initialize Langfuse tracing with OTel instrumentation."""
         try:
             from pydantic_ai import Agent
-            from pydantic_ai.models.instrumented import InstrumentationSettings
 
             if tracing_config.backend == "langfuse":
                 from langfuse import Langfuse
@@ -215,13 +217,13 @@ class DrawingPipeline:
                 )
                 logger.info("Tracing: Langfuse initialized")
 
-            Agent.instrument_all(
-                InstrumentationSettings(
-                    include_binary_content=tracing_config.include_binary_content,
-                )
-            )
+            settings = tracing_instrumentation_settings(tracing_config)
+            self._instrumentation = settings
+            Agent.instrument_all(settings)
             logger.info(
-                f"Tracing: PydanticAI instrumentation enabled (binary_content={tracing_config.include_binary_content})"
+                "Tracing: PydanticAI instrumentation enabled (content=%s, binary_content=%s)",
+                settings.include_content,
+                settings.include_binary_content,
             )
         except ImportError as e:
             logger.warning(f"Tracing dependencies not installed: {e}. Tracing disabled.")
@@ -328,6 +330,7 @@ class DrawingPipeline:
             api_base=self.api_base,
             api_key=self.api_key,
             instructions=EXPLORATION_PROMPT,
+            instrument=self._instrumentation,
         )
         evidence_sections: list[str] = []
         tile_evidence: list[str] = []
@@ -406,6 +409,7 @@ class DrawingPipeline:
             api_base=self.api_base,
             api_key=self.api_key,
             instructions=SUMMARIZE_PROMPT,
+            instrument=self._instrumentation,
         )
         summarize_prompt = (
             "Convert the following exploration findings into the JSON ExtractionResult.\n"
@@ -528,6 +532,7 @@ class DrawingPipeline:
             api_base=self.api_base,
             api_key=self.api_key,
             instructions=VALIDATION_DIFF_PROMPT,
+            instrument=self._instrumentation,
         )
 
         # Build a compact summary of only the fields to verify (not full JSON)

@@ -7,14 +7,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import secrets
 import socket
+import time
+import uuid
 from collections.abc import AsyncGenerator, Callable, Coroutine
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
+from urllib.parse import unquote
 
 import httpx
 from config.settings import AppConfig
@@ -53,6 +57,13 @@ from src.webapp.auth import (
     require_production_secret,
     user_role,
     verify_password,
+)
+from src.webapp.observability import (
+    configure_logging,
+    configure_tracing,
+    project_id_var,
+    request_id_var,
+    valid_request_id,
 )
 from src.webapp.store import (
     ActivityEntry,
@@ -229,6 +240,8 @@ def _cookie_secure_override() -> bool | None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+    from pydantic_ai import Agent
+
     mode = environment_mode()
     if mode == "production":
         require_production_secret()
@@ -238,6 +251,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         if process_env is None:
             os.environ.pop("FA_ENV", None)
     _cookie_secure_override()
+    configure_logging()
     config = AppConfig.from_yaml(REPO_ROOT / "config" / "default.yaml")
     output_dir = Path(config.output.dir)
     if not output_dir.is_absolute():
@@ -246,10 +260,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.rules = load_rules(REPO_ROOT / "config" / "furniture.yaml")
     app.state.store = ProjectStore(output_dir / "webapp" / "projects")
     app.state.tasks = {}
-    await _recover_jobs(app)
-    yield
-    for task in app.state.tasks.values():
-        task.cancel()
+    previous_instrumentation = Agent._instrument_default
+    # Tracing first: jobs resumed by recovery run their agents with the configured instrumentation.
+    app.state.tracing_client = configure_tracing(config)
+    try:
+        await _recover_jobs(app)
+        yield
+    finally:
+        try:
+            for task in app.state.tasks.values():
+                task.cancel()
+            if app.state.tracing_client is not None:
+                app.state.tracing_client.flush()
+        finally:
+            Agent.instrument_all(previous_instrumentation)
 
 
 app = FastAPI(title="Furniture Assistant", lifespan=lifespan)
@@ -261,6 +285,37 @@ app.add_middleware(UploadRequestLimitMiddleware)
 async def project_not_found(_request: Request, exc: ProjectNotFoundError) -> JSONResponse:
     """A project deleted (moved to the trash) while a request waited for its lock."""
     return JSONResponse(status_code=404, content={"detail": f"Unknown project {exc.args[0]}"})
+
+
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    incoming = request.headers.get("x-request-id")
+    request_id = incoming if valid_request_id(incoming) else uuid.uuid4().hex
+    request_token = request_id_var.set(request_id)
+    path_parts = request.url.path.split("/")
+    project_id = unquote(path_parts[3]) if len(path_parts) > 3 and path_parts[:3] == ["", "api", "projects"] else None
+    project_token = project_id_var.set(project_id)
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        resolved_project_id = project_id or getattr(request.state, "project_id", None)
+        response_project_token = project_id_var.set(resolved_project_id) if resolved_project_id is not None else None
+        try:
+            logging.getLogger("src.webapp.request").info(
+                "HTTP request completed method=%s path=%s status=%s duration_ms=%.1f",
+                request.method,
+                request.url.path,
+                response.status_code,
+                (time.perf_counter() - started) * 1000,
+            )
+        finally:
+            if response_project_token is not None:
+                project_id_var.reset(response_project_token)
+        return response
+    finally:
+        project_id_var.reset(project_token)
+        request_id_var.reset(request_token)
 
 
 # Before this module's routes: /export/valuation.xlsx must win over the generic /export/{fmt}.
@@ -574,6 +629,8 @@ async def create_project(
     uploads = [(f.filename or "upload", await f.read()) for f in files]
     store = _store(request)
     project = store.create_project(name, uploads)
+    project_id_var.set(project.id)
+    request.state.project_id = project.id
     with store.lock(project.id):
         store.append_audit(project.id, "create_project", request.state.username, detail=project.name)
     return {"id": project.id}

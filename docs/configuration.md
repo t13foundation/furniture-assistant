@@ -68,10 +68,12 @@ Optional `models.cost_per_million_input` and `models.cost_per_million_output` ra
 
 | Env | Field | Meaning | Default |
 |---|---|---|---|
-| `FA_TRACING_ENABLED` | `tracing.enabled` | `true` / `1` / `yes`. Gates Langfuse/Phoenix tracing in the legacy pipeline orchestrator; forced off in e2e runs. | `true` |
-| `FA_TRACING_BACKEND` | `tracing.backend` | `langfuse` / `phoenix` / `none`. | `langfuse` |
+| `FA_TRACING_ENABLED` | `tracing.enabled` | `true` / `1` / `yes`. Enables PydanticAI/OpenTelemetry instrumentation in the web app and legacy pipeline; forced off in e2e runs. | `true` |
+| `FA_TRACING_BACKEND` | `tracing.backend` | `langfuse` / `phoenix` / `none`. Langfuse initializes its client; Phoenix exports through the configured OpenTelemetry environment. | `langfuse` |
+| `FA_TRACING_INCLUDE_CONTENT` | `tracing.include_content` | Opt in to exporting prompts, extracted drawing text, tool arguments/results and module drafts. This can expose customer drawing content; keep disabled unless trace storage is approved. | `false` |
+| `FA_TRACING_INCLUDE_BINARY_CONTENT` | `tracing.include_binary_content` | Opt in to including image/binary model content in telemetry events; this can expose drawing data. | `false` |
 
-Tracing also needs `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST` in the environment. A local Langfuse stack: `docker compose -f docker-compose.dev.yml up -d` (UI on `http://localhost:3000`).
+Content capture is disabled by default in both the web app and legacy pipeline, including image bytes. PydanticAI retry feedback is also redacted when content capture is off. Enable either setting only when the trace backend and its retention/access controls are approved for drawing data.
 
 ### `input_dir`
 
@@ -93,6 +95,8 @@ Read directly from the environment (not part of `AppConfig`):
 | `FA_MAX_REQUEST_MB` | `src/webapp/api.py` | Maximum total multipart request body for project creation and quote import; rejected before parsing when oversized. | `200` |
 | `FA_MAX_UPLOAD_MB` | `src/webapp/api.py`, `src/webapp/reports.py` | Maximum size per uploaded file; larger files get HTTP 413. | `50` |
 | `FA_MAX_FILES` | `src/webapp/api.py` | Maximum files per project; more get HTTP 413. | `50` |
+| `FA_LOG_FORMAT` | `src/webapp/observability.py` | Application log format: `json` or `text`. | `text` |
+| `FA_LOG_LEVEL` | `src/webapp/observability.py` | Application logging threshold (e.g. `INFO`, `DEBUG`, `WARNING`). | `INFO` |
 | `OPENAI_API_KEY` | `src/furniture/interpret.py` | API key used when `FA_API_BASE` points at `api.openai.com` and no real key is configured. Read from process environment; `.env` only in development. | unset |
 
 In production, set `FA_ENV=production` in the process environment (values are case-insensitive). `.env` cannot select the runtime mode; if `FA_ENV` is absent from the process environment, the mode remains `development` even if `.env` contains an `FA_ENV` entry. Provide `FA_SESSION_SECRET` from a protected environment source (for example, a systemd credential or secret manager). The app fails at startup if the secret is missing or `FA_COOKIE_SECURE` is set to an invalid value. The cookie is `Secure` in production or when `FA_PUBLIC_URL` uses HTTPS, unless a valid explicit `FA_COOKIE_SECURE` value overrides it.

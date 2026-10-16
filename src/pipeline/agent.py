@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from config.settings import DocumentConfig
 from pydantic_ai import Agent
+from pydantic_ai.models.instrumented import InstrumentationSettings
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
@@ -66,6 +67,7 @@ def create_extraction_agent(
     api_base: str = "http://localhost:1234/v1",
     api_key: str | None = None,
     instructions: str = "",
+    instrument: InstrumentationSettings | bool | None = False,
 ) -> Agent[DrawingDeps, ExtractionResult]:
     model = create_model(model_name, api_base, api_key)
     agent: Agent[DrawingDeps, ExtractionResult] = Agent(
@@ -74,7 +76,7 @@ def create_extraction_agent(
         output_type=ExtractionResult,
         instructions=instructions,
         retries=5,
-        instrument=True,
+        instrument=instrument,
     )
 
     # Register all tools from shared registry (with caching)
@@ -88,6 +90,7 @@ def create_exploration_agent(
     api_base: str = "http://localhost:1234/v1",
     api_key: str | None = None,
     instructions: str = "",
+    instrument: InstrumentationSettings | bool | None = False,
 ) -> Agent[DrawingDeps, str]:
     """Create an agent that explores drawings with tools and returns a text summary.
 
@@ -101,7 +104,7 @@ def create_exploration_agent(
         output_type=str,
         instructions=instructions,
         retries=2,
-        instrument=True,
+        instrument=instrument,
     )
 
     register_tools(agent, ALL_TOOLS)
@@ -114,6 +117,7 @@ def create_validation_agent(
     api_base: str = "http://localhost:1234/v1",
     api_key: str | None = None,
     instructions: str = "",
+    instrument: InstrumentationSettings | bool | None = False,
 ) -> Agent[DrawingDeps, str]:
     """Create a validation agent that re-verifies specific fields against the drawing.
 
@@ -128,7 +132,7 @@ def create_validation_agent(
         output_type=str,
         instructions=instructions,
         retries=3,
-        instrument=True,
+        instrument=instrument,
     )
 
     # Register validation-subset tools from shared registry
@@ -142,6 +146,7 @@ def create_summarizing_agent(
     api_base: str = "http://localhost:1234/v1",
     api_key: str | None = None,
     instructions: str = "",
+    instrument: InstrumentationSettings | bool | None = False,
 ) -> Agent[None, str]:
     """Create a summarizing agent that formats text into JSON.
 
@@ -157,7 +162,7 @@ def create_summarizing_agent(
         output_type=str,
         instructions=instructions or SUMMARIZE_PROMPT,
         retries=3,
-        instrument=True,
+        instrument=instrument,
     )
     return agent
 
@@ -167,6 +172,7 @@ def create_unified_agent(
     api_base: str = "http://localhost:1234/v1",
     api_key: str | None = None,
     instructions: str = "",
+    instrument: InstrumentationSettings | bool | None = False,
 ) -> Agent[DrawingDeps, str]:
     """Create a tool-capable text agent for exploration or validation.
 
@@ -182,7 +188,7 @@ def create_unified_agent(
         output_type=str,
         instructions=instructions,
         retries=5,
-        instrument=True,
+        instrument=instrument,
     )
 
     register_tools(agent, ALL_TOOLS)

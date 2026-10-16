@@ -63,6 +63,8 @@ ocr:
 tracing:
   enabled: true  # Set true + env vars to activate
   backend: "langfuse"  # langfuse | phoenix | none
-  include_binary_content: true
+  # Content is excluded by default; opt in only when trace storage is approved.
+  include_content: false
+  include_binary_content: false
   # Env vars: LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_HOST
   # Or: FA_TRACING_ENABLED=true, FA_TRACING_BACKEND=langfuse
