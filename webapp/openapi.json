@@ -774,6 +774,82 @@
         }
       }
     },
+    "/api/projects/{project_id}/activity/integrity": {
+      "get": {
+        "summary": "Project Activity Integrity",
+        "operationId": "project_activity_integrity_api_projects__project_id__activity_integrity_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityIntegrityResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/audit.jsonl": {
+      "get": {
+        "summary": "Download Audit",
+        "operationId": "download_audit_api_projects__project_id__audit_jsonl_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/review": {
       "get": {
         "summary": "Project Review",
@@ -1404,6 +1480,48 @@
           "detail"
         ],
         "title": "ActivityEntry"
+      },
+      "ActivityIntegrityResponse": {
+        "properties": {
+          "chain_status": {
+            "type": "string",
+            "enum": [
+              "unverified",
+              "verified",
+              "invalid"
+            ],
+            "title": "Chain Status"
+          },
+          "chain_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chain Error"
+          },
+          "head_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head Hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chain_status",
+          "chain_error",
+          "head_hash"
+        ],
+        "title": "ActivityIntegrityResponse"
       },
       "AnswersBody": {
         "properties": {
@@ -4231,6 +4349,28 @@
             },
             "type": "array",
             "title": "Files"
+          },
+          "audit_chain_since": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Chain Since"
+          },
+          "audit_legacy_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Legacy Hash"
           }
         },
         "type": "object",
@@ -4238,7 +4378,9 @@
           "id",
           "name",
           "created_at",
-          "files"
+          "files",
+          "audit_chain_since",
+          "audit_legacy_hash"
         ],
         "title": "Project"
       },
@@ -4320,6 +4462,28 @@
             "type": "array",
             "title": "Files"
           },
+          "audit_chain_since": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Chain Since"
+          },
+          "audit_legacy_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Legacy Hash"
+          },
           "job_status": {
             "anyOf": [
               {
@@ -4342,6 +4506,8 @@
           "name",
           "created_at",
           "files",
+          "audit_chain_since",
+          "audit_legacy_hash",
           "job_status",
           "module_count"
         ],

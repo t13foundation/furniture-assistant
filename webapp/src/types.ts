@@ -5,6 +5,7 @@ import type { components } from './api-types'
 type S = components['schemas']
 
 export type ActivityEntry = S['ActivityEntry']
+export type ActivityIntegrityResponse = S['ActivityIntegrityResponse']
 export type BoardPrice = S['BoardPrice']
 export type BoardSummaryRow = S['BoardSummaryRow']
 export type BoundingBox = S['BoundingBox']

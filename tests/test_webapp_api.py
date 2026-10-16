@@ -81,6 +81,10 @@ def test_delete_project_moves_to_trash_and_hides_it(client, tmp_path):
     trashed_project = next(trash.glob(f"{project_id}-*"))
     audit = (trashed_project / "audit.jsonl").read_text(encoding="utf-8").splitlines()
     assert json.loads(audit[-1])["action"] == "delete_project"
+    # The deletion record is chained onto the moved log, so the trashed project still verifies.
+    from src.webapp.audit import verify_audit
+
+    assert verify_audit(trashed_project / "audit.jsonl") == (True, None)
     assert client.get(f"/api/projects/{project_id}").status_code == 404
     assert client.get("/api/projects").json() == []
     assert client.delete(f"/api/projects/{project_id}").status_code == 404

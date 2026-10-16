@@ -269,6 +269,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/activity/integrity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Project Activity Integrity */
+        get: operations["project_activity_integrity_api_projects__project_id__activity_integrity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/audit.jsonl": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Audit */
+        get: operations["download_audit_api_projects__project_id__audit_jsonl_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/review": {
         parameters: {
             query?: never;
@@ -465,6 +499,18 @@ export interface components {
             module_id: string | null;
             /** Detail */
             detail: string | null;
+        };
+        /** ActivityIntegrityResponse */
+        ActivityIntegrityResponse: {
+            /**
+             * Chain Status
+             * @enum {string}
+             */
+            chain_status: "unverified" | "verified" | "invalid";
+            /** Chain Error */
+            chain_error: string | null;
+            /** Head Hash */
+            head_hash: string | null;
         };
         /** AnswersBody */
         AnswersBody: {
@@ -1375,6 +1421,10 @@ export interface components {
             created_at: string;
             /** Files */
             files: components["schemas"]["ProjectFile"][];
+            /** Audit Chain Since */
+            audit_chain_since: number | null;
+            /** Audit Legacy Hash */
+            audit_legacy_hash: string | null;
         };
         /** ProjectDetailResponse */
         ProjectDetailResponse: {
@@ -1402,6 +1452,10 @@ export interface components {
             created_at: string;
             /** Files */
             files: components["schemas"]["ProjectFile"][];
+            /** Audit Chain Since */
+            audit_chain_since: number | null;
+            /** Audit Legacy Hash */
+            audit_legacy_hash: string | null;
             /** Job Status */
             job_status: string | null;
             /** Module Count */
@@ -2307,6 +2361,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ActivityEntry"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    project_activity_integrity_api_projects__project_id__activity_integrity_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityIntegrityResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_audit_api_projects__project_id__audit_jsonl_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
