@@ -12,7 +12,7 @@ from pathlib import Path
 from config.settings import AppConfig
 from dotenv import load_dotenv
 
-from src.webapp.store import ProjectStore
+from src.webapp.store import ProjectNotFoundError, ProjectStore
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -98,26 +98,33 @@ def prune(root: Path, older_than_days: int, *, archives: bool, pages: bool, tras
             else:
                 path.unlink(missing_ok=True)
 
+    def prune_project(project_dir: Path) -> None:
+        if archives:
+            modules = project_dir / "modules"
+            if _confined(modules, root) and modules.is_dir():
+                for archive in sorted(modules.glob("history-archive-*")):
+                    if archive.is_symlink() or not archive.is_dir() or not _confined(archive, root):
+                        continue
+                    match = ARCHIVE_TIMESTAMP.fullmatch(archive.name)
+                    archived_at = _timestamp(match.group(1), "%Y%m%d_%H%M%S") if match else None
+                    if archived_at is not None and archived_at < cutoff:
+                        remove(archive, "archive", _tree_bytes(archive), root)
+        if pages and _modified_at(project_dir, ignore_pages=True) < cutoff:
+            cache = project_dir / "pages"
+            if _confined(cache, root) and cache.is_dir():
+                for page in sorted(cache.glob("*.png")):
+                    if not page.is_symlink() and page.is_file() and _confined(page, root):
+                        remove(page, "page cache", page.stat(follow_symlinks=False).st_size, root)
+
     for project_dir in sorted(root.iterdir()):
         if project_dir.is_symlink() or not project_dir.is_dir() or not (project_dir / "project.json").is_file():
             continue
-        with store.lock(project_dir.name):
-            if archives:
-                modules = project_dir / "modules"
-                if _confined(modules, root) and modules.is_dir():
-                    for archive in sorted(modules.glob("history-archive-*")):
-                        if archive.is_symlink() or not archive.is_dir() or not _confined(archive, root):
-                            continue
-                        match = ARCHIVE_TIMESTAMP.fullmatch(archive.name)
-                        archived_at = _timestamp(match.group(1), "%Y%m%d_%H%M%S") if match else None
-                        if archived_at is not None and archived_at < cutoff:
-                            remove(archive, "archive", _tree_bytes(archive), root)
-            if pages and _modified_at(project_dir, ignore_pages=True) < cutoff:
-                cache = project_dir / "pages"
-                if _confined(cache, root) and cache.is_dir():
-                    for page in sorted(cache.glob("*.png")):
-                        if not page.is_symlink() and page.is_file() and _confined(page, root):
-                            remove(page, "page cache", page.stat(follow_symlinks=False).st_size, root)
+        try:
+            with store.lock(project_dir.name):
+                prune_project(project_dir)
+        except ProjectNotFoundError:
+            # Deleted (moved to the trash) by the app between listing and locking.
+            print(f"Skipping vanished project during prune: {project_dir}")
 
     if trash:
         trash_dir = root.parent / "trash"
@@ -185,7 +192,7 @@ def backup(root: Path, output: Path, *, include_pages: bool, allow_empty: bool =
                                 name for name in names if name in ignored
                             ],
                         )
-                except FileNotFoundError:
+                except (FileNotFoundError, ProjectNotFoundError):
                     if project_dir.is_symlink() or not project_dir.is_dir():
                         skipped += 1
                         print(f"Skipping vanished project during backup: {project_dir}")
