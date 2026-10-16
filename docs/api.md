@@ -6,7 +6,7 @@ All endpoints are JSON under `/api/`. The table below is generated from `webapp/
 
 ## Authentication
 
-Auth is enabled as soon as the users file (`FA_USERS_FILE`, default `config/users.yaml`) contains at least one user; while it is empty every endpoint is public. When enabled, every `/api/*` request except the four public paths requires the session cookie `fa_session` (set by login; `httponly`, `samesite=lax`, 7-day expiry, `secure` only when `FA_COOKIE_SECURE` is set — see [Operations](operations.md)). Missing or expired sessions get `401 {"detail": "Authentication required"}`. The middleware lives in `src/webapp/auth.py`.
+Auth is enabled as soon as the users file (`FA_USERS_FILE`, default `config/users.yaml`) contains at least one user; while it is empty every endpoint is public. When enabled, every `/api/*` request except the four public paths requires the session cookie `fa_session` (set by login; `httponly`, `samesite=lax`, 7-day expiry; its `secure` flag defaults to production/HTTPS and can be overridden with a valid `FA_COOKIE_SECURE` boolean spelling — see [Operations](operations.md)). Missing or expired sessions get `401 {"detail": "Authentication required"}`. The middleware lives in `src/webapp/auth.py`.
 
 ## Auth and health (public)
 
