@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Awaitable, Callable
 
 from config.agent_prompts import MODULE_INTERPRETATION_PROMPT, MODULE_REFINE_PROMPT
 from pydantic_ai import Agent, BinaryContent
 from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIResponsesModel
 from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.usage import RunUsage
 
 from src.furniture.resolve import module_region
 from src.furniture.schema import (
@@ -108,11 +110,18 @@ async def interpret_page(
     chains: list[DimensionChain],
     text_runs: list[TextRun],
     units: Unit,
+    on_usage: Callable[[RunUsage], Awaitable[None]] | None = None,
 ) -> PageDraft:
-    result = await agent.run(
-        [page_prompt(marks, chains, text_runs, units), BinaryContent(data=image_png, media_type="image/png")],
-        model_settings={"max_tokens": _MAX_OUTPUT_TOKENS},
-    )
+    usage = RunUsage()
+    try:
+        result = await agent.run(
+            [page_prompt(marks, chains, text_runs, units), BinaryContent(data=image_png, media_type="image/png")],
+            model_settings={"max_tokens": _MAX_OUTPUT_TOKENS},
+            usage=usage,
+        )
+    finally:
+        if on_usage:
+            await on_usage(usage)
     return result.output
 
 
@@ -144,11 +153,21 @@ def refine_prompt(module: FurnitureModule, draft: ModuleDraft) -> str:
 
 
 async def refine_draft(
-    agent: Agent[None, ModuleDraft], image_png: bytes, module: FurnitureModule, draft: ModuleDraft
+    agent: Agent[None, ModuleDraft],
+    image_png: bytes,
+    module: FurnitureModule,
+    draft: ModuleDraft,
+    on_usage: Callable[[RunUsage], Awaitable[None]] | None = None,
 ) -> ModuleDraft:
     """Ask the model once more for the module's open questions; returns the full corrected draft."""
-    result = await agent.run(
-        [refine_prompt(module, draft), BinaryContent(data=image_png, media_type="image/png")],
-        model_settings={"max_tokens": _MAX_OUTPUT_TOKENS},
-    )
+    usage = RunUsage()
+    try:
+        result = await agent.run(
+            [refine_prompt(module, draft), BinaryContent(data=image_png, media_type="image/png")],
+            model_settings={"max_tokens": _MAX_OUTPUT_TOKENS},
+            usage=usage,
+        )
+    finally:
+        if on_usage:
+            await on_usage(usage)
     return result.output.model_copy(update={"module_id": draft.module_id})

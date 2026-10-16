@@ -18,7 +18,19 @@ async function reviewCount(page: Page): Promise<number> {
   return Number(label.replace(/\D/g, ''))
 }
 
+async function ensureProjectUrl(page: Page) {
+  if (!projectUrl) {
+    await page.goto('/')
+    await page
+      .getByRole('link', { name: /E2E szafa/ })
+      .first()
+      .click()
+    projectUrl = page.url()
+  }
+}
+
 async function openModule(page: Page) {
+  await ensureProjectUrl(page)
   await page.goto(projectUrl)
   await page
     .getByRole('link', { name: /Szafa testowa/ })
@@ -39,6 +51,8 @@ test('upload a drawing and get an analysed 3D module', async ({ page }) => {
   await expect(page).toHaveURL(/#\/p\/[^/]+$/)
   projectUrl = page.url()
   await expect(page.getByRole('link', { name: /Szafa testowa/ }).first()).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByText(/Project total: \d+ requests · \d+ input \/ \d+ output tokens/)).toBeVisible()
+  await expect(page.getByText(/This analysis: \d+ requests · \d+ input \/ \d+ output tokens/)).toBeVisible()
 
   await page
     .getByRole('link', { name: /Szafa testowa/ })
@@ -150,11 +164,20 @@ test('viewer can read projects but cannot mutate or access editing controls', as
     expect(await page.evaluate(async () => (await fetch('/api/projects')).status)).toBe(200)
     const projectId = decodeURIComponent(new URL(projectUrl).hash.split('/')[2])
     expect(
-      await page.evaluate(async (id) => (await fetch(`/api/projects/${id}/analyze`, { method: 'POST' })).status, projectId),
+      await page.evaluate(
+        async (id) => (await fetch(`/api/projects/${id}/analyze`, { method: 'POST' })).status,
+        projectId,
+      ),
     ).toBe(403)
     await page.goto(projectUrl)
     await expect(page.getByRole('link', { name: '+ New project' })).toHaveCount(0)
-    await page.getByRole('link', { name: /Szafa testowa/ }).first().click()
+    await expect(page.getByRole('button', { name: 'Rename project' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Delete project' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Run analysis' })).toHaveCount(0)
+    await page
+      .getByRole('link', { name: /Szafa testowa/ })
+      .first()
+      .click()
     await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0)
     await reviewTab(page).click()
     await expect(page.getByRole('heading', { name: 'Review', exact: true })).toBeVisible()
@@ -166,7 +189,120 @@ test('viewer can read projects but cannot mutate or access editing controls', as
     await expect(page.getByText('Quote workbook (.xlsx)')).toBeVisible()
     await expect(page.getByLabel('Markup percent')).toBeDisabled()
     await expect(page.getByLabel('Quote workbook (.xlsx)')).toBeDisabled()
+    for (const control of await page
+      .locator('select[aria-label^="Modules for "], input[aria-label^="Ignore "]')
+      .all()) {
+      await expect(control).toBeDisabled()
+    }
   } finally {
     rmSync(usersFile, { force: true })
   }
+})
+test('A to B to A does not expose stale module data after a failed reload', async ({ page }) => {
+  await ensureProjectUrl(page)
+  const projectId = new URL(projectUrl).hash.match(/\/p\/([^/]+)/)?.[1]
+  expect(projectId).toBeTruthy()
+  await page.route('**/api/projects/*', async (route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname !== `/api/projects/${projectId}` || route.request().method() !== 'GET') {
+      await route.continue()
+      return
+    }
+    const response = await route.fetch()
+    const detail = (await response.json()) as { modules: Array<Record<string, unknown>> }
+    await route.fulfill({
+      response,
+      json: {
+        ...detail,
+        modules: [
+          ...detail.modules,
+          { ...detail.modules[0], module_id: 'SZ02', title: 'Second cabinet', group_id: 'SZ02' },
+        ],
+      },
+    })
+  })
+  let aRequests = 0
+  await page.route('**/api/projects/*/modules/*', async (route) => {
+    const pathname = new URL(route.request().url()).pathname
+    if (route.request().method() === 'GET' && pathname.endsWith('/modules/SZ01')) {
+      aRequests += 1
+      if (aRequests === 2) {
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: 'module unavailable' }),
+        })
+        return
+      }
+    } else if (route.request().method() === 'GET' && pathname.endsWith('/modules/SZ02')) {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'module unavailable' }),
+      })
+      return
+    }
+    await route.continue()
+  })
+
+  await page.goto(projectUrl)
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: /Second cabinet/ })).toBeVisible()
+  await page.getByRole('link', { name: /Second cabinet/ }).click()
+  await expect(page.getByText('module unavailable')).toBeVisible()
+  await page.getByRole('link', { name: /Szafa testowa/ }).click()
+
+  await expect.poll(() => aRequests).toBe(2)
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0)
+  await expect(page.getByText('module unavailable')).toBeVisible()
+})
+
+test('successful report reload clears its previous error', async ({ page }) => {
+  let failed = false
+  await ensureProjectUrl(page)
+  await page.route('**/api/projects/*/summary/materials', async (route) => {
+    if (!failed) {
+      failed = true
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'report unavailable' }),
+      })
+    } else {
+      await route.continue()
+    }
+  })
+  await page.goto(`${projectUrl}/materials`)
+  await expect(page.getByText('report unavailable')).toBeVisible()
+
+  await page.getByRole('link', { name: 'Production processes', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Production processes' })).toBeVisible()
+  await page.getByRole('link', { name: 'Material summary', exact: true }).click()
+
+  await expect(page.getByRole('heading', { name: 'Material summary' })).toBeVisible()
+  await expect(page.getByText('report unavailable')).toHaveCount(0)
+})
+
+test('rename and delete a project', async ({ page }) => {
+  await page.goto('/#/new')
+  await page.getByPlaceholder('e.g. Apartment 04').fill('Rename delete e2e')
+  await page.locator('input[type="file"]').setInputFiles(drawing)
+  await page.getByRole('button', { name: 'Run analysis' }).click()
+  await expect(page).toHaveURL(/#\/p\/[^/]+$/)
+  await expect(page.getByRole('link', { name: /Szafa testowa/ }).first()).toBeVisible({ timeout: 60_000 })
+
+  await page.getByRole('button', { name: 'Rename project' }).click()
+  await page.getByLabel('Project name').fill('Unsaved E2E project')
+  await page.getByRole('button', { name: 'Cancel rename' }).click()
+  await expect(page.getByText('Rename delete e2e')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Rename project' }).click()
+  await page.getByLabel('Project name').fill('Renamed E2E project')
+  await page.getByRole('button', { name: 'Save project name' }).click()
+  await expect(page.getByText('Renamed E2E project')).toBeVisible()
+
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: 'Delete project' }).click()
+  await expect(page).toHaveURL(/#\/$/)
+  await expect(page.getByText(/Rename delete e2e|Renamed E2E project/)).toHaveCount(0)
 })

@@ -368,6 +368,55 @@
         }
       }
     },
+    "/api/projects/{project_id}/quote/assignments": {
+      "put": {
+        "summary": "Put Quote Assignment",
+        "operationId": "put_quote_assignment_api_projects__project_id__quote_assignments_put",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuoteAssignment"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuoteComparison"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/pricing": {
       "get": {
         "summary": "Get Pricing",
@@ -573,6 +622,122 @@
         }
       }
     },
+    "/api/projects/{project_id}": {
+      "patch": {
+        "summary": "Rename Project",
+        "operationId": "rename_project_api_projects__project_id__patch",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectNameBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete Project",
+        "operationId": "delete_project_api_projects__project_id__delete",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Get Project",
+        "operationId": "get_project_api_projects__project_id__get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/analyze": {
       "post": {
         "summary": "Analyze",
@@ -599,44 +764,8 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/projects/{project_id}": {
-      "get": {
-        "summary": "Get Project",
-        "operationId": "get_project_api_projects__project_id__get",
-        "parameters": [
-          {
-            "name": "project_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Project Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProjectDetailResponse"
-                }
-              }
-            }
+          "503": {
+            "description": "Model server unavailable"
           },
           "422": {
             "description": "Validation Error",
@@ -678,6 +807,82 @@
                   },
                   "title": "Response Project Activity Api Projects  Project Id  Activity Get"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/activity/integrity": {
+      "get": {
+        "summary": "Project Activity Integrity",
+        "operationId": "project_activity_integrity_api_projects__project_id__activity_integrity_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityIntegrityResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project_id}/audit.jsonl": {
+      "get": {
+        "summary": "Download Audit",
+        "operationId": "download_audit_api_projects__project_id__audit_jsonl_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -1158,6 +1363,9 @@
               }
             }
           },
+          "503": {
+            "description": "Model server unavailable"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -1321,6 +1529,48 @@
           "detail"
         ],
         "title": "ActivityEntry"
+      },
+      "ActivityIntegrityResponse": {
+        "properties": {
+          "chain_status": {
+            "type": "string",
+            "enum": [
+              "unverified",
+              "verified",
+              "invalid"
+            ],
+            "title": "Chain Status"
+          },
+          "chain_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chain Error"
+          },
+          "head_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head Hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chain_status",
+          "chain_error",
+          "head_hash"
+        ],
+        "title": "ActivityIntegrityResponse"
       },
       "AnswersBody": {
         "properties": {
@@ -2646,7 +2896,58 @@
         ],
         "title": "Issue"
       },
-      "Job": {
+      "JobItem": {
+        "properties": {
+          "file_index": {
+            "type": "integer",
+            "title": "File Index"
+          },
+          "page_index": {
+            "type": "integer",
+            "title": "Page Index"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "done",
+              "skipped",
+              "error"
+            ],
+            "title": "Status",
+            "default": "pending"
+          },
+          "module_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Module Ids"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_index",
+          "page_index",
+          "status",
+          "module_ids",
+          "error"
+        ],
+        "title": "JobItem"
+      },
+      "JobResponse": {
         "properties": {
           "status": {
             "type": "string",
@@ -2698,68 +2999,29 @@
               }
             ],
             "title": "Error"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageTotals"
+          },
+          "usage_breakdown": {
+            "items": {
+              "$ref": "#/components/schemas/UsageBreakdown"
+            },
+            "type": "array",
+            "title": "Usage Breakdown"
           }
         },
         "type": "object",
-        "title": "Job",
+        "title": "JobResponse",
         "required": [
           "status",
           "started_at",
           "finished_at",
           "items",
-          "error"
+          "error",
+          "usage",
+          "usage_breakdown"
         ]
-      },
-      "JobItem": {
-        "properties": {
-          "file_index": {
-            "type": "integer",
-            "title": "File Index"
-          },
-          "page_index": {
-            "type": "integer",
-            "title": "Page Index"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "running",
-              "done",
-              "skipped",
-              "error"
-            ],
-            "title": "Status",
-            "default": "pending"
-          },
-          "module_ids": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Module Ids"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          }
-        },
-        "type": "object",
-        "required": [
-          "file_index",
-          "page_index",
-          "status",
-          "module_ids",
-          "error"
-        ],
-        "title": "JobItem"
       },
       "LoginBody": {
         "properties": {
@@ -4153,6 +4415,28 @@
             },
             "type": "array",
             "title": "Files"
+          },
+          "audit_chain_since": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Chain Since"
+          },
+          "audit_legacy_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Legacy Hash"
           }
         },
         "type": "object",
@@ -4160,7 +4444,9 @@
           "id",
           "name",
           "created_at",
-          "files"
+          "files",
+          "audit_chain_since",
+          "audit_legacy_hash"
         ],
         "title": "Project"
       },
@@ -4172,12 +4458,15 @@
           "job": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Job"
+                "$ref": "#/components/schemas/JobResponse"
               },
               {
                 "type": "null"
               }
             ]
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageTotals"
           },
           "modules": {
             "items": {
@@ -4191,6 +4480,7 @@
         "required": [
           "project",
           "job",
+          "usage",
           "modules"
         ],
         "title": "ProjectDetailResponse"
@@ -4238,6 +4528,28 @@
             "type": "array",
             "title": "Files"
           },
+          "audit_chain_since": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Chain Since"
+          },
+          "audit_legacy_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Legacy Hash"
+          },
           "job_status": {
             "anyOf": [
               {
@@ -4260,10 +4572,27 @@
           "name",
           "created_at",
           "files",
+          "audit_chain_since",
+          "audit_legacy_hash",
           "job_status",
           "module_count"
         ],
         "title": "ProjectListResponse"
+      },
+      "ProjectNameBody": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "ProjectNameBody"
       },
       "ProjectPricing": {
         "properties": {
@@ -4400,6 +4729,36 @@
         "title": "Question",
         "description": "Data the drawing did not provide; answered by the user (Override) or a model re-run.\n\n``id`` is the Override target it is answered with: ``width``, ``height``, ``depth``, ``plinth``,\n``col:<index>:width``, ``cell:<cell_id>:height``, ``material:carcass``, ``material:front``."
       },
+      "QuoteAssignment": {
+        "properties": {
+          "line_index": {
+            "type": "integer",
+            "title": "Line Index"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "module_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Module Ids"
+          },
+          "ignored": {
+            "type": "boolean",
+            "title": "Ignored",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "line_index",
+          "label"
+        ],
+        "title": "QuoteAssignment"
+      },
       "QuoteComparison": {
         "properties": {
           "lines": {
@@ -4460,18 +4819,36 @@
           "amount": {
             "type": "number",
             "title": "Amount"
+          },
+          "manual_module_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Manual Module Ids"
+          },
+          "ignored": {
+            "type": "boolean",
+            "title": "Ignored",
+            "default": false
           }
         },
         "type": "object",
         "required": [
           "label",
           "codes",
-          "amount"
+          "amount",
+          "manual_module_ids",
+          "ignored"
         ],
         "title": "QuoteLine"
       },
       "QuoteMatch": {
         "properties": {
+          "line_index": {
+            "type": "integer",
+            "title": "Line Index"
+          },
           "codes": {
             "items": {
               "type": "string"
@@ -4516,6 +4893,16 @@
             "type": "array",
             "title": "Module Ids"
           },
+          "match": {
+            "type": "string",
+            "enum": [
+              "code",
+              "manual",
+              "ignored",
+              "none"
+            ],
+            "title": "Match"
+          },
           "complete": {
             "type": "boolean",
             "title": "Complete"
@@ -4523,12 +4910,14 @@
         },
         "type": "object",
         "required": [
+          "line_index",
           "codes",
           "label",
           "quote_amount",
           "app_amount",
           "ratio",
           "module_ids",
+          "match",
           "complete"
         ],
         "title": "QuoteMatch"
@@ -4670,6 +5059,78 @@
         ],
         "title": "UncertainItem",
         "description": "A value of the draft the model flags as unsure (column/row are 1-based, left→right, top→bottom)."
+      },
+      "UsageBreakdown": {
+        "properties": {
+          "file_name": {
+            "type": "string",
+            "title": "File Name"
+          },
+          "page_index": {
+            "type": "integer",
+            "title": "Page Index"
+          },
+          "module_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Module Id"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageTotals"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_name",
+          "page_index",
+          "module_id",
+          "usage"
+        ],
+        "title": "UsageBreakdown"
+      },
+      "UsageTotals": {
+        "properties": {
+          "requests": {
+            "type": "integer",
+            "title": "Requests",
+            "default": 0
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens",
+            "default": 0
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens",
+            "default": 0
+          },
+          "estimated_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Cost"
+          }
+        },
+        "type": "object",
+        "title": "UsageTotals",
+        "required": [
+          "requests",
+          "input_tokens",
+          "output_tokens",
+          "estimated_cost"
+        ]
       },
       "ValidationError": {
         "properties": {

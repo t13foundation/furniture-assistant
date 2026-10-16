@@ -8,16 +8,10 @@ import DrawingPane from './DrawingPane'
 import ModelPane from './ModelPane'
 import ModuleEditor from './ModuleEditor'
 import PartsList from './PartsList'
-import { materialKinds } from './types'
-import type {
-  CabinetKind,
-  FurnitureModule,
-  MaterialKind,
-  ModuleModel,
-  Override,
-  Panel,
-  ProcessKind,
-} from './types'
+import MaterialAnswer from './ModuleMaterialAnswer'
+import ModuleHeader from './ModuleHeader'
+import ModuleElementEditor from './ModuleElementEditor'
+import type { FurnitureModule, MaterialKind, ModuleModel, Override, Panel, ProcessKind } from './types'
 
 interface Props {
   id: string
@@ -297,97 +291,17 @@ export default function ModuleView({ id, model, files, onUpdate, canEdit }: Prop
   }))
   return (
     <div className="module-workspace">
-      <header className="module-header">
-        <div>
-          <div className="eyebrow">DRAWING AND 3D</div>
-          <h1>
-            {module.title} <span className="module-id">{module.module_id}</span>
-          </h1>
-          <p>
-            {module.file_name} · page {module.page_index + 1}
-          </p>
-          <div className="module-identity-chips" aria-label="Cabinet identity">
-            <span className="module-identity-chip">{module.kind.replaceAll('_', ' ')}</span>
-            <span className="module-identity-chip">{module.group_id || module.module_id}</span>
-          </div>
-          {canEdit && (
-          <div className="module-meta-controls">
-            <label>
-              Cabinet kind
-              <select
-                aria-label="Cabinet kind"
-                value={module.kind}
-                onChange={(event) =>
-                  void submitAnswers([{ target: 'kind', kind: event.target.value as CabinetKind }])
-                }
-              >
-                {(
-                  [
-                    'cabinet',
-                    'wardrobe',
-                    'kitchen',
-                    'shelving',
-                    'bench',
-                    'reception_desk',
-                    'wall_cladding',
-                    'other',
-                  ] as CabinetKind[]
-                ).map((kind) => (
-                  <option key={kind} value={kind}>
-                    {kind.replaceAll('_', ' ')}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Cabinet group
-              <input
-                aria-label="Cabinet group code"
-                defaultValue={module.group_id}
-                key={`${module.module_id}:${module.group_id}`}
-                onBlur={(event) => {
-                  const group = event.currentTarget.value.trim()
-                  if (group !== module.group_id) void submitAnswers([{ target: 'group', group_id: group }])
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') event.currentTarget.blur()
-                }}
-              />
-            </label>
-          </div>
-          )}
-        </div>
-        <div className="header-actions">
-          <button className="button secondary" onClick={exportGltf}>
-            Download glTF
-          </button>
-          {(['cutlist.csv', 'cutlist.xlsx', 'sheets.svg', 'panels.dxf'] as const).map((format, index) => (
-            <a className="button secondary" key={format} href={exportPath(format)}>
-              {['CSV', 'XLSX', 'SVG', 'DXF'][index]}
-            </a>
-          ))}
-          {canEdit && (
-            <button className="button primary" onClick={() => setEditing(true)}>
-              Edit
-            </button>
-          )}
-        </div>
-      </header>
-      <div className="tab-bar module-tabs">
-        {(
-          [
-            ['drawing', 'Drawing and 3D'],
-            ['missing', `Review ${module.questions.length}`],
-            ['hardware', `Hardware ${model.hardware.length}`],
-            ['processes', `Processes ${model.processes.length}`],
-            ['history', 'History'],
-          ] as [Tab, string][]
-        ).map(([key, label]) => (
-          <button className={tab === key ? 'tab-active' : ''} key={key} onClick={() => setTab(key)}>
-            {label}
-          </button>
-        ))}
-      </div>
+      <ModuleHeader
+        module={module}
+        model={model}
+        tab={tab}
+        setTab={setTab}
+        submitAnswers={submitAnswers}
+        exportGltf={exportGltf}
+        exportPath={exportPath}
+        onEdit={() => setEditing(true)}
+        canEdit={canEdit}
+      />
       {tab === 'drawing' && (
         <>
           <div className="module-grid">
@@ -409,184 +323,20 @@ export default function ModuleView({ id, model, files, onUpdate, canEdit }: Prop
             />
           </div>
           {(selectedCell || selectedModule) && canEdit && (
-            <section className="element-editor report-card">
-              <header className="report-heading">
-                <h3>{selectedCell ? selectedCell.label || selectedCell.id : 'Module elements'}</h3>
-                <button
-                  className="button secondary"
-                  onClick={() => {
-                    setSelectedCellId(null)
-                    setSelectedModule(false)
-                  }}
-                >
-                  Close
-                </button>
-              </header>
-              {selectedCell && selectedColumn ? (
-                <>
-                  <div className="dimension-fields">
-                    <label>
-                      Front
-                      <select
-                        value={elementDraft.front ?? selectedCell.front}
-                        onChange={(event) =>
-                          setElementDraft((current) => ({ ...current, front: event.target.value }))
-                        }
-                      >
-                        {Object.entries(frontLabels).map(([value, label]) => (
-                          <option value={value} key={value}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      Shelves
-                      <input
-                        type="number"
-                        min="0"
-                        value={elementDraft.shelves ?? selectedCell.shelves}
-                        onChange={(event) =>
-                          setElementDraft((current) => ({ ...current, shelves: Number(event.target.value) }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      Cell height (mm)
-                      <input
-                        type="number"
-                        value={elementDraft.height_mm ?? selectedCell.height_mm}
-                        onChange={(event) =>
-                          setElementDraft((current) => ({
-                            ...current,
-                            height_mm: Number(event.target.value),
-                          }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      Column width (mm)
-                      <input
-                        type="number"
-                        value={elementDraft.column_width ?? selectedColumn.width_mm}
-                        onChange={(event) =>
-                          setElementDraft((current) => ({
-                            ...current,
-                            column_width: Number(event.target.value),
-                          }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      Cell material
-                      <select
-                        value={
-                          ('material_key' in elementDraft
-                            ? elementDraft.material_key
-                            : selectedCell.material_key) ?? ''
-                        }
-                        onChange={(event) =>
-                          setElementDraft((current) => ({
-                            ...current,
-                            material_key: event.target.value || null,
-                            new_material_name: '',
-                          }))
-                        }
-                      >
-                        <option value="">Module default</option>
-                        {module.materials.map((material) => (
-                          <option key={material.key} value={material.key}>
-                            {material.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      Or new material
-                      <input
-                        value={String(elementDraft.new_material_name ?? '')}
-                        onChange={(event) =>
-                          setElementDraft((current) => ({
-                            ...current,
-                            new_material_name: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      New material kind
-                      <select
-                        value={String(elementDraft.new_material_kind ?? 'laminated_board')}
-                        onChange={(event) =>
-                          setElementDraft((current) => ({
-                            ...current,
-                            new_material_kind: event.target.value,
-                          }))
-                        }
-                      >
-                        {materialKinds.map((kind) => (
-                          <option key={kind} value={kind}>
-                            {kind.replaceAll('_', ' ')}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                  {module.questions
-                    .filter(
-                      (question) =>
-                        question.cell_id === selectedCell.id ||
-                        question.id.startsWith(`cell:${selectedCell.id}:`) ||
-                        question.id.startsWith(`col:${selectedColumn.index}:`),
-                    )
-                    .map((question) => (
-                      <p className="question-note" key={question.id}>
-                        {question.label} · {reasonLabels[question.reason]}
-                        {question.note ? ` · ${question.note}` : ''}
-                      </p>
-                    ))}
-                </>
-              ) : (
-                <div className="dimension-fields">
-                  {(['width_mm', 'height_mm', 'depth_mm', 'plinth_mm'] as const).map((field) => (
-                    <label key={field}>
-                      {field.replace('_mm', '')} (mm)
-                      <input
-                        type="number"
-                        value={elementDraft[field] ?? module[field]}
-                        onChange={(event) =>
-                          setElementDraft((current) => ({ ...current, [field]: Number(event.target.value) }))
-                        }
-                      />
-                    </label>
-                  ))}
-                  {(['carcass_material_key', 'front_material_key'] as const).map((field) => (
-                    <label key={field}>
-                      {field.startsWith('carcass') ? 'Carcass' : 'Front'} material
-                      <select
-                        value={elementDraft[field] ?? module[field] ?? ''}
-                        onChange={(event) =>
-                          setElementDraft((current) => ({ ...current, [field]: event.target.value || null }))
-                        }
-                      >
-                        <option value="">Unknown</option>
-                        {module.materials.map((material) => (
-                          <option key={material.key} value={material.key}>
-                            {material.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ))}
-                </div>
-              )}
-              {answerError && <p className="error-message">{answerError}</p>}
-              <div className="modal-actions">
-                <button className="button primary" onClick={() => void saveElement()}>
-                  Save
-                </button>
-              </div>
-            </section>
+            <ModuleElementEditor
+              module={module}
+              selectedCell={selectedCell}
+              selectedColumn={selectedColumn}
+              elementDraft={elementDraft}
+              setElementDraft={setElementDraft}
+              reasonLabels={reasonLabels}
+              answerError={answerError}
+              onSave={() => void saveElement()}
+              onClose={() => {
+                setSelectedCellId(null)
+                setSelectedModule(false)
+              }}
+            />
           )}
           <PartsList
             rows={model.cut_list}
@@ -1068,97 +818,6 @@ export default function ModuleView({ id, model, files, onUpdate, canEdit }: Prop
             }
           }}
         />
-      )}
-    </div>
-  )
-}
-
-function MaterialAnswer({
-  module,
-  value,
-  candidateValues,
-  onChange,
-  disabled,
-}: {
-  module: FurnitureModule
-  value: Override
-  candidateValues: string[]
-  onChange: (patch: Partial<Override>) => void
-  disabled: boolean
-}) {
-  const [name, setName] = useState('')
-  const [kind, setKind] = useState<MaterialKind>('laminated_board')
-  return (
-    <div className="material-answer">
-      <label>
-        Existing material
-        <select
-          disabled={disabled}
-          value={value.material_key ?? ''}
-          onChange={(event) => onChange({ material_key: event.target.value || null, material: null })}
-        >
-          <option value="">Choose material…</option>
-          {[
-            ...new Map(
-              [...module.materials, ...module.legend_materials].map((material) => [material.key, material]),
-            ).values(),
-          ].map((material) => (
-            <option key={material.key} value={material.key}>
-              {material.name} ({material.key})
-            </option>
-          ))}
-        </select>
-      </label>
-      {!!candidateValues.length && (
-        <div className="candidate-marks" aria-label="Suggested legend materials">
-          <span>Suggested materials</span>
-          {candidateValues.map((key) => {
-            const material = [...module.legend_materials, ...module.materials].find(
-              (item) => item.key === key,
-            )
-            return (
-              <button
-                type="button"
-                className={`chip ${value.material_key === key ? 'selected' : ''}`}
-                key={key}
-                disabled={disabled}
-                onClick={() => onChange({ material_key: key, material: null })}
-              >
-                {material?.name ?? key}
-              </button>
-            )
-          })}
-        </div>
-      )}
-      <div className="answer-row">
-        <label>
-          Or new material
-          <input disabled={disabled} value={name} onChange={(event) => setName(event.target.value)} />
-        </label>
-        <label>
-          Kind
-          <select disabled={disabled} value={kind} onChange={(event) => setKind(event.target.value as MaterialKind)}>
-            {materialKinds.map((item) => (
-              <option key={item} value={item}>
-                {item.replaceAll('_', ' ')}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      {name && (
-        <button
-          className="button secondary"
-          disabled={disabled}
-          onClick={() =>
-            onChange({
-              material_key: null,
-              material: { key: `M${module.materials.length + 1}`, name, kind, thickness_mm: null },
-            })
-          }
-        >
-          Use “{name}”
-        </button>
       )}
     </div>
   )

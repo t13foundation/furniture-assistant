@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, ApiError } from './api'
 import { isViewer, useAuth } from './auth'
@@ -10,22 +10,17 @@ import type {
   MaterialKind,
   MaterialSummary,
   Pricing,
-  ProcessKind,
   ProcessSummary,
   ProjectDetail,
   ProjectPricing,
   Valuation,
-  ValuationGroup,
 } from './types'
 
-const processLabels: Record<ProcessKind, string> = {
-  cutting: 'Rozkrój',
-  edge_banding: 'Oklejanie',
-  drilling: 'Wiercenie',
-  assembly: 'Montaż korpusu',
-  hardware_mounting: 'Montaż okuć',
-  installation: 'Montaż',
-}
+const FilesReport = lazy(() => import('./FilesReport'))
+const MaterialsReport = lazy(() => import('./MaterialsReport'))
+const ProcessesReport = lazy(() => import('./ProcessesReport'))
+const ValuationReport = lazy(() => import('./ValuationReport'))
+
 // Keyed by the generated union, so a category added in the backend fails the type check until listed here.
 const hardwareCategories = Object.keys({
   hinge: 1,
@@ -46,7 +41,12 @@ type Page = 'files' | 'materials' | 'processes' | 'valuation' | 'pricing'
 export default function ProjectReport({ page }: { page: Exclude<Page, 'pricing'> }) {
   const { id = '' } = useParams()
   const [detail, setDetail] = useState<{ id: string; value: ProjectDetail } | null>(null)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<{
+    id: string
+    page: Page
+    source: 'detail' | 'report'
+    message: string
+  } | null>(null)
   // Tagged with its page: the component stays mounted when navigating between report pages, so
   // one page's summary must never be rendered by another page's view.
   const [report, setReport] = useState<{
@@ -59,8 +59,6 @@ export default function ProjectReport({ page }: { page: Exclude<Page, 'pricing'>
     let active = true
     let polling = false
     let timer = 0
-    setError('')
-    setDetail(null)
     const endpoint =
       page === 'materials' ? 'summary/materials' : page === 'processes' ? 'summary/processes' : 'valuation'
     let reportRequest = 0
@@ -71,18 +69,31 @@ export default function ProjectReport({ page }: { page: Exclude<Page, 'pricing'>
         `/api/projects/${encodeURIComponent(id)}/${endpoint}`,
       )
         .then((data) => {
-          if (active && request === reportRequest) setReport({ id, page, data })
+          if (active && request === reportRequest) {
+            setReport({ id, page, data })
+            setError((current) =>
+              current?.id === id && current.page === page && current.source === 'report' ? null : current,
+            )
+          }
         })
         .catch((e: unknown) => {
           if (active && request === reportRequest)
-            setError(e instanceof Error ? e.message : 'Could not load report')
+            setError({
+              id,
+              page,
+              source: 'report',
+              message: e instanceof Error ? e.message : 'Could not load report',
+            })
         })
     }
     const loadDetail = async () => {
       try {
         const result = await api<ProjectDetail>(`/api/projects/${encodeURIComponent(id)}`)
-        if (!active) return
+        if (!active) return false
         setDetail({ id, value: result })
+        setError((current) =>
+          current?.id === id && current.page === page && current.source === 'detail' ? null : current,
+        )
         const running = result.job?.status === 'queued' || result.job?.status === 'running'
         if (polling && !running) {
           polling = false
@@ -91,7 +102,13 @@ export default function ProjectReport({ page }: { page: Exclude<Page, 'pricing'>
         }
         return running
       } catch (e) {
-        if (active) setError(e instanceof Error ? e.message : 'Could not load project')
+        if (active)
+          setError({
+            id,
+            page,
+            source: 'detail',
+            message: e instanceof Error ? e.message : 'Could not load project',
+          })
         return false
       }
     }
@@ -112,6 +129,7 @@ export default function ProjectReport({ page }: { page: Exclude<Page, 'pricing'>
     }
   }, [id, page])
   const data = report?.id === id && report.page === page ? report.data : null
+  const reportError = error?.id === id && error.page === page ? error.message : null
   const title = (
     {
       files: 'Uploaded files',
@@ -143,7 +161,7 @@ export default function ProjectReport({ page }: { page: Exclude<Page, 'pricing'>
             </>
           )}
         </header>
-        {error && <p className="error-banner">{error}</p>}
+        {reportError && <p className="error-banner">{reportError}</p>}
         {page === 'files' && currentDetail && <FilesReport detail={currentDetail} />}
         {page === 'materials' && data && <MaterialsReport data={data as MaterialSummary} id={id} />}
         {page === 'processes' && data && <ProcessesReport data={data as ProcessSummary} />}
@@ -153,296 +171,12 @@ export default function ProjectReport({ page }: { page: Exclude<Page, 'pricing'>
   )
 }
 
-function FilesReport({ detail }: { detail: ProjectDetail }) {
-  const items = detail.job?.items ?? []
-  return (
-    <section className="report-card">
-      <div className="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>File</th>
-              <th>Drawing type</th>
-              <th>Page</th>
-              <th>Status</th>
-              <th>Modules</th>
-              <th>Details</th>
-            </tr>
-          </thead>
-          <tbody>
-            {detail.project.files.flatMap((file) => {
-              const fileItems = items.filter((item) => item.file_index === file.index)
-              return (fileItems.length ? fileItems : [null]).map((item, index) => (
-                <tr key={`${file.index}-${index}`}>
-                  <td>{file.name}</td>
-                  <td>{file.drawing_type}</td>
-                  <td>{item ? item.page_index + 1 : '—'}</td>
-                  <td>{item?.status ?? 'pending'}</td>
-                  <td>{item?.module_ids.join(', ') || '—'}</td>
-                  <td>{item?.error || (item?.status === 'skipped' ? 'Skipped by file type' : '—')}</td>
-                </tr>
-              ))
-            })}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  )
-}
-function MaterialsReport({ data, id }: { data: MaterialSummary; id: string }) {
-  return (
-    <>
-      <div className="stat-strip">
-        <Stat label="Modules" value={data.module_count} />
-        <Stat label="Board types" value={data.boards.length} />
-        <Stat label="Hardware items" value={data.hardware.length} />
-      </div>
-      {!!data.incomplete_module_ids.length && (
-        <p className="notice">Incomplete modules: {data.incomplete_module_ids.join(', ')}</p>
-      )}
-      {!!data.boards.some((row) => row.unplaced.length) && (
-        <p className="error-message">
-          Parts longer than available sheets: {data.boards.flatMap((row) => row.unplaced).join(', ')}
-        </p>
-      )}
-      <section className="report-card">
-        <h2>Boards</h2>
-        <DataTable
-          headers={['Material', 'Thickness', 'Parts', 'Area m²', 'Sheets', 'Utilization']}
-          rows={data.boards.map((row) => [
-            row.material || '—',
-            `${row.thickness_mm} mm`,
-            row.parts,
-            row.area_m2.toFixed(2),
-            row.sheets,
-            `${(row.utilization * 100).toFixed(1)}%`,
-          ])}
-        />
-      </section>
-      <section className="report-card">
-        <h2>Edge banding</h2>
-        <DataTable
-          headers={['Material', 'Length', 'Modules']}
-          rows={data.edges.map((row) => [
-            row.material,
-            `${row.length_m.toFixed(2)} m`,
-            row.module_ids.join(', '),
-          ])}
-        />
-      </section>
-      <section className="report-card">
-        <h2>Hardware</h2>
-        <DataTable
-          headers={['Category', 'Item', 'Specification', 'Qty', 'Modules']}
-          rows={data.hardware.map((row) => [
-            row.category,
-            row.name,
-            row.spec || '—',
-            `${row.qty} ${row.unit}`,
-            row.module_ids.join(', '),
-          ])}
-        />
-      </section>
-      <div className="header-actions report-exports">
-        {(['cutlist.csv', 'cutlist.xlsx', 'sheets.svg', 'panels.dxf'] as const).map((format) => (
-          <a
-            className="button secondary"
-            key={format}
-            href={`/api/projects/${encodeURIComponent(id)}/export/${format}`}
-          >
-            {format.toUpperCase()}
-          </a>
-        ))}
-      </div>
-    </>
-  )
-}
-function ProcessesReport({ data }: { data: ProcessSummary }) {
-  const [tab, setTab] = useState<'recognition' | 'summary' | ProcessKind>('recognition')
-  const kinds = data.totals.map((total) => total.process)
-  return (
-    <>
-      <div className="stat-strip">
-        <Stat label="Modules" value={data.rows.length} />
-        <Stat label="Process kinds" value={kinds.length} />
-        <Stat label="Total hours" value={(data.total_minutes / 60).toFixed(1)} />
-      </div>
-      <div className="tab-bar report-tabs">
-        {(['recognition', 'summary', ...kinds] as const).map((key) => (
-          <button className={tab === key ? 'tab-active' : ''} key={key} onClick={() => setTab(key)}>
-            {key === 'recognition'
-              ? 'Recognition'
-              : key === 'summary'
-                ? 'Summary of processes'
-                : processLabels[key]}
-          </button>
-        ))}
-      </div>
-      {tab === 'recognition' ? (
-        <section className="report-card">
-          <h2>Which processes are on which module</h2>
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Module</th>
-                  {kinds.map((kind) => (
-                    <th key={kind}>{processLabels[kind]}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {data.rows.map((row) => (
-                  <tr key={row.module_id}>
-                    <td>
-                      <strong>{row.title}</strong>
-                      <small>
-                        {row.file_name} · page {row.page_index + 1}
-                      </small>
-                    </td>
-                    {kinds.map((kind) => {
-                      const cell = row.processes[kind]
-                      return (
-                        <td key={kind}>
-                          {cell
-                            ? cell.qty == null || cell.unit == null
-                              ? `✓ ${cell.minutes.toFixed(1)} min`
-                              : `✓ ${cell.qty} ${cell.unit} · ${cell.minutes.toFixed(1)} min`
-                            : '—'}
-                        </td>
-                      )
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      ) : tab === 'summary' ? (
-        <section className="report-card">
-          <h2>Summary of processes</h2>
-          <DataTable
-            headers={['Process', 'Lines', 'Minutes', 'Hours']}
-            rows={data.totals.map((total) => [
-              processLabels[total.process],
-              total.lines,
-              total.minutes.toFixed(1),
-              (total.minutes / 60).toFixed(2),
-            ])}
-          />
-          <p>Total: {(data.total_minutes / 60).toFixed(2)} h</p>
-        </section>
-      ) : (
-        <section className="report-card">
-          <h2>{processLabels[tab]}</h2>
-          <DataTable
-            headers={['Module', 'Operation', 'Qty', 'Minutes']}
-            rows={data.lines
-              .filter((line) => line.process === tab)
-              .map((line) => [
-                line.module_id,
-                line.operation,
-                `${line.qty} ${line.unit}`,
-                line.minutes.toFixed(1),
-              ])}
-          />
-        </section>
-      )}
-    </>
-  )
-}
-function ValuationReport({ data }: { data: Valuation }) {
-  const [open, setOpen] = useState<Record<ValuationGroup, boolean>>({
-    boards: false,
-    edges: false,
-    hardware: false,
-    processes: false,
-  })
-  const groups: ValuationGroup[] = ['boards', 'edges', 'hardware', 'processes']
-  const labels: Record<ValuationGroup, string> = {
-    boards: 'Materials · Boards',
-    edges: 'Edges',
-    hardware: 'Hardware',
-    processes: 'Processes',
-  }
-  const currency = (amount: number) => {
-    try {
-      return new Intl.NumberFormat(undefined, { style: 'currency', currency: data.currency }).format(amount)
-    } catch {
-      return `${amount.toFixed(2)} ${data.currency}`
-    }
-  }
-  return (
-    <>
-      <div className="stat-strip valuation-stats">
-        {groups.map((group) => (
-          <Stat key={group} label={labels[group]} value={currency(data.totals[group])} />
-        ))}
-        <Stat label="Total net" value={currency(data.totals.total_net)} />
-        <Stat label="Markup" value={currency(data.totals.markup)} />
-        <Stat label="Total with markup" value={currency(data.totals.total_with_markup)} />
-      </div>
-      {data.notes.map((note, index) => (
-        <p className="notice" key={index}>
-          {note}
-        </p>
-      ))}
-      {groups.map((group) => (
-        <section className="report-card collapsible" key={group}>
-          <button
-            className="collapse-heading"
-            onClick={() => setOpen((current) => ({ ...current, [group]: !current[group] }))}
-          >
-            <strong>{labels[group]}</strong>
-            <span>
-              {currency(data.totals[group])} {open[group] ? '−' : '+'}
-            </span>
-          </button>
-          {open[group] && (
-            <DataTable
-              headers={['Item', 'Qty', 'Unit price', 'Amount', 'Modules']}
-              rows={data.lines
-                .filter((line) => line.group === group)
-                .map((line) => [
-                  line.name,
-                  `${line.qty} ${line.unit}`,
-                  line.unit_price == null ? 'no price' : currency(line.unit_price),
-                  line.amount == null ? '—' : currency(line.amount),
-                  line.module_ids.join(', '),
-                ])}
-            />
-          )}
-        </section>
-      ))}
-      <section className="report-card">
-        <h2>Per module</h2>
-        <DataTable
-          headers={['Module', 'Amount']}
-          rows={data.per_module.map((row) => [`${row.title} (${row.module_id})`, currency(row.amount)])}
-        />
-      </section>
-      <section className="report-card">
-        <h2>Per cabinet</h2>
-        <DataTable
-          headers={['Cabinet', 'Net', 'Markup', 'Total', 'Modules']}
-          rows={data.per_group.map((row) => [
-            row.title || row.group_id,
-            currency(row.amount),
-            currency(row.markup),
-            currency(row.total_with_markup),
-            row.module_ids.join(', '),
-          ])}
-        />
-      </section>
-    </>
-  )
-}
 /** Workspace-wide pricing; inside a project (``/p/:id/pricing``) it keeps that project's sidebar. */
 export function PricingSettings() {
   const { id } = useParams()
   const { auth } = useAuth()
   const viewer = isViewer(auth)
-  const [detail, setDetail] = useState<ProjectDetail | null>(null)
+  const [detail, setDetail] = useState<{ projectId: string; value: ProjectDetail } | null>(null)
   const canSave = !viewer && (!auth.auth_enabled || id !== undefined || auth.role === 'admin')
   const [pricing, setPricing] = useState<Pricing | null>(null)
   const [inherited, setInherited] = useState(false)
@@ -453,6 +187,12 @@ export function PricingSettings() {
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
   const [quoteFile, setQuoteFile] = useState<File | null>(null)
+  const currentProjectId = useRef(id)
+  useLayoutEffect(() => {
+    currentProjectId.current = id
+  }, [id])
+  const assignmentSaving = useRef(false)
+  const [savingAssignment, setSavingAssignment] = useState(false)
   useEffect(() => {
     const endpoint = id ? `/api/projects/${encodeURIComponent(id)}/pricing` : '/api/pricing'
     void api<Pricing | ProjectPricing>(endpoint)
@@ -482,13 +222,13 @@ export function PricingSettings() {
     }
   }, [id])
   useEffect(() => {
-    setDetail(null)
     if (id)
       void api<ProjectDetail>(`/api/projects/${encodeURIComponent(id)}`)
-        .then(setDetail)
+        .then((value) => setDetail({ projectId: id, value }))
         .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Could not load project'))
   }, [id])
-  const sidebar = id ? <ProjectSidebar id={id} detail={detail} /> : <WorkspaceSidebar />
+  const currentDetail = detail && detail.projectId === id ? detail.value : null
+  const sidebar = id ? <ProjectSidebar id={id} detail={currentDetail} /> : <WorkspaceSidebar />
   if (!pricing)
     return (
       <div className="project-layout">
@@ -548,6 +288,35 @@ export function PricingSettings() {
       setQuoteError(e instanceof Error ? e.message : 'Could not compare quote')
     }
   }
+  const saveQuoteAssignment = async (
+    lineIndex: number,
+    label: string,
+    moduleIds: string[],
+    ignored: boolean,
+  ) => {
+    if (!id || assignmentSaving.current) return
+    assignmentSaving.current = true
+    setSavingAssignment(true)
+    setQuoteError('')
+    try {
+      const projectId = id
+      const value = await api<QuoteComparison>(
+        `/api/projects/${encodeURIComponent(projectId)}/quote/assignments`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ line_index: lineIndex, label, module_ids: moduleIds, ignored }),
+        },
+      )
+      if (currentProjectId.current === projectId) setQuoteState({ projectId, value })
+    } catch (e) {
+      if (currentProjectId.current === id)
+        setQuoteError(e instanceof Error ? e.message : 'Could not save quote assignment')
+    } finally {
+      assignmentSaving.current = false
+      setSavingAssignment(false)
+    }
+  }
   const revertPricing = async () => {
     if (!id) return
     setError('')
@@ -568,7 +337,7 @@ export function PricingSettings() {
       <main className="workspace pricing-page">
         <header className="report-page-heading">
           <div>
-            <p>{detail ? `PROJECT / ${detail.project.name} / SETTINGS` : 'SETTINGS'}</p>
+            <p>{currentDetail ? `PROJECT / ${currentDetail.project.name} / SETTINGS` : 'SETTINGS'}</p>
             <h1>Pricing</h1>
           </div>
           {id && (
@@ -592,7 +361,9 @@ export function PricingSettings() {
           <section className="report-card">
             <label>
               Markup percent
-              <input disabled={!canSave} type="number"
+              <input
+                disabled={!canSave}
+                type="number"
                 min="0"
                 step="0.1"
                 value={pricing.markup_percent}
@@ -604,7 +375,9 @@ export function PricingSettings() {
         <section className="report-card">
           <label>
             Currency
-            <input disabled={!canSave} value={pricing.currency}
+            <input
+              disabled={!canSave}
+              value={pricing.currency}
               onChange={(event) => setPricing({ ...pricing, currency: event.target.value })}
             />
           </label>
@@ -613,13 +386,16 @@ export function PricingSettings() {
             <div className="pricing-row" key={index}>
               <label>
                 Match
-                <input disabled={!canSave} value={row.match}
+                <input
+                  disabled={!canSave}
+                  value={row.match}
                   onChange={(event) => updateBoard(index, { match: event.target.value })}
                 />
               </label>
               <label>
                 Material kind
-                <select disabled={!canSave}
+                <select
+                  disabled={!canSave}
                   value={row.kind ?? ''}
                   onChange={(event) =>
                     updateBoard(index, {
@@ -635,7 +411,9 @@ export function PricingSettings() {
               </label>
               <label>
                 Thickness mm
-                <input disabled={!canSave} type="number"
+                <input
+                  disabled={!canSave}
+                  type="number"
                   value={row.thickness_mm ?? ''}
                   onChange={(event) =>
                     updateBoard(index, {
@@ -646,7 +424,9 @@ export function PricingSettings() {
               </label>
               <label>
                 Price / m²
-                <input disabled={!canSave} type="number"
+                <input
+                  disabled={!canSave}
+                  type="number"
                   min="0"
                   step="0.01"
                   value={row.price_per_m2}
@@ -664,7 +444,9 @@ export function PricingSettings() {
               </button>
             </div>
           ))}
-          <button className="button secondary" disabled={!canSave}
+          <button
+            className="button secondary"
+            disabled={!canSave}
             onClick={() =>
               setPricing({
                 ...pricing,
@@ -679,7 +461,9 @@ export function PricingSettings() {
           <h2>Edge banding</h2>
           <label>
             Price per metre
-            <input disabled={!canSave} type="number"
+            <input
+              disabled={!canSave}
+              type="number"
               min="0"
               step="0.01"
               value={pricing.edge_banding_per_m ?? ''}
@@ -697,7 +481,9 @@ export function PricingSettings() {
           {hardwareCategories.map((category) => (
             <label className="inline-field" key={category}>
               {category}
-              <input disabled={!canSave} type="number"
+              <input
+                disabled={!canSave}
+                type="number"
                 min="0"
                 step="0.01"
                 value={pricing.hardware[category] ?? ''}
@@ -719,7 +505,8 @@ export function PricingSettings() {
           <h2>Labour</h2>
           <label>
             Rate per hour
-            <input disabled={!canSave}
+            <input
+              disabled={!canSave}
               type="number"
               min="0"
               step="0.01"
@@ -750,12 +537,18 @@ export function PricingSettings() {
             <h2>Compare with client quote</h2>
             <label>
               Quote workbook (.xlsx)
-              <input disabled={viewer} type="file"
+              <input
+                disabled={viewer}
+                type="file"
                 accept=".xlsx"
                 onChange={(event) => setQuoteFile(event.target.files?.[0] ?? null)}
               />
             </label>
-            <button className="button secondary" disabled={!quoteFile || viewer} onClick={() => void uploadQuote()}>
+            <button
+              className="button secondary"
+              disabled={!quoteFile || viewer}
+              onClick={() => void uploadQuote()}
+            >
               Compare quote
             </button>
             {quoteError && (
@@ -769,19 +562,88 @@ export function PricingSettings() {
                   Quote total {quote.total_quote.toFixed(2)} · App total {quote.total_app.toFixed(2)} ·
                   Suggested markup {quote.suggested_markup_percent.toFixed(1)}% ({quote.suggestion_basis})
                 </p>
-                <DataTable
-                  headers={['Code', 'Quote item', 'Quote', 'App', 'Ratio', 'Modules']}
-                  rows={quote.comparison.map((row) => [
-                    row.codes.join(', ') || '—',
-                    row.label,
-                    row.quote_amount.toFixed(2),
-                    row.app_amount?.toFixed(2) ?? '—',
-                    row.ratio == null ? '—' : `×${row.ratio.toFixed(2)}`,
-                    row.module_ids.length
-                      ? `${row.module_ids.join(', ')}${row.complete ? '' : ' (incomplete or partly unpriced)'}`
-                      : 'no matching module',
-                  ])}
-                />
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        {[
+                          'Code',
+                          'Quote item',
+                          'Quote',
+                          'App',
+                          'Ratio',
+                          'Modules',
+                          'Assign modules',
+                          'Ignore',
+                        ].map((header) => (
+                          <th key={header}>{header}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {quote.comparison.map((row) => {
+                        const ignored = row.match === 'ignored'
+                        const selected = row.match === 'manual' ? row.module_ids : []
+                        return (
+                          <tr key={row.line_index}>
+                            <td>{row.codes.join(', ') || '—'}</td>
+                            <td>{row.label}</td>
+                            <td>{row.quote_amount.toFixed(2)}</td>
+                            <td>{row.app_amount?.toFixed(2) ?? '—'}</td>
+                            <td>{row.ratio == null ? '—' : `×${row.ratio.toFixed(2)}`}</td>
+                            <td>
+                              {row.module_ids.length
+                                ? `${row.module_ids.join(', ')}${row.complete ? '' : ' (incomplete or partly unpriced)'}`
+                                : row.match === 'ignored'
+                                  ? 'ignored'
+                                  : 'no matching module'}
+                            </td>
+                            <td>
+                              <select
+                                aria-label={`Modules for ${row.label}`}
+                                multiple
+                                value={selected}
+                                disabled={
+                                  viewer || ignored || savingAssignment || !currentDetail?.modules.length
+                                }
+                                onChange={(event) =>
+                                  void saveQuoteAssignment(
+                                    row.line_index,
+                                    row.label,
+                                    Array.from(event.currentTarget.selectedOptions, (option) => option.value),
+                                    false,
+                                  )
+                                }
+                              >
+                                {(currentDetail?.modules ?? []).map((module) => (
+                                  <option key={module.module_id} value={module.module_id}>
+                                    {module.group_id} · {module.title || module.module_id}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td>
+                              <input
+                                type="checkbox"
+                                aria-label={`Ignore ${row.label}`}
+                                checked={ignored}
+                                disabled={viewer || savingAssignment}
+                                onChange={(event) =>
+                                  void saveQuoteAssignment(
+                                    row.line_index,
+                                    row.label,
+                                    event.currentTarget.checked ? [] : selected,
+                                    event.currentTarget.checked,
+                                  )
+                                }
+                              />
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
                 <button
                   className="button secondary"
                   disabled={!canSave}
@@ -794,44 +656,6 @@ export function PricingSettings() {
           </section>
         )}
       </main>
-    </div>
-  )
-}
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="stat">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  )
-}
-function DataTable({ headers, rows }: { headers: string[]; rows: (string | number)[][] }) {
-  return (
-    <div className="table-scroll">
-      <table>
-        <thead>
-          <tr>
-            {headers.map((header) => (
-              <th key={header}>{header}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length ? (
-            rows.map((row, i) => (
-              <tr key={i}>
-                {row.map((value, j) => (
-                  <td key={j}>{value}</td>
-                ))}
-              </tr>
-            ))
-          ) : (
-            <tr>
-              <td colSpan={headers.length}>No data</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
     </div>
   )
 }

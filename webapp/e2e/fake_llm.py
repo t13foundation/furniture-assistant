@@ -47,6 +47,11 @@ def _arguments(parameters: dict) -> dict:
     return {**MODULE, **MATERIALS}
 
 
+@app.get("/v1/models")
+async def models() -> dict:
+    return {"object": "list", "data": [{"id": "fake", "object": "model"}]}
+
+
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request) -> dict:
     body = await request.json()

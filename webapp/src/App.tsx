@@ -1,15 +1,25 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { HashRouter, Route, Routes } from 'react-router-dom'
-import NewProject from './NewProject'
-import ProjectView, { ProjectList } from './ProjectView'
-import ProjectReport, { PricingSettings } from './Reports'
-import { ActivityPage, ProjectReviewPage } from './AdditionalPages'
 import { api } from './api'
 import type { AuthState } from './types'
 import { AuthContext } from './auth'
 import ErrorBoundary from './ErrorBoundary'
 import './styles.css'
+
+const NewProject = lazy(() => import('./NewProject'))
+const ProjectView = lazy(() => import('./ProjectView'))
+const ProjectList = lazy(() => import('./ProjectView').then(({ ProjectList }) => ({ default: ProjectList })))
+const ProjectReport = lazy(() => import('./Reports'))
+const PricingSettings = lazy(() =>
+  import('./Reports').then(({ PricingSettings }) => ({ default: PricingSettings })),
+)
+const ProjectReviewPage = lazy(() =>
+  import('./AdditionalPages').then(({ ProjectReviewPage }) => ({ default: ProjectReviewPage })),
+)
+const ActivityPage = lazy(() =>
+  import('./AdditionalPages').then(({ ActivityPage }) => ({ default: ActivityPage })),
+)
 
 export default function App() {
   const [auth, setAuth] = useState<AuthState | null>(null)
@@ -100,21 +110,23 @@ export default function App() {
               </form>
             </main>
           ) : (
-            <Routes>
-              <Route path="/" element={<ProjectList />} />
-              <Route path="/new" element={<NewProject />} />
-              <Route path="/settings/pricing" element={<PricingSettings />} />
-              <Route path="/p/:id" element={<ProjectView />} />
-              <Route path="/p/:id/m/:moduleId" element={<ProjectView />} />
-              <Route path="/p/:id/files" element={<ProjectReport page="files" />} />
-              <Route path="/p/:id/materials" element={<ProjectReport page="materials" />} />
-              <Route path="/p/:id/processes" element={<ProjectReport page="processes" />} />
-              <Route path="/p/:id/valuation" element={<ProjectReport page="valuation" />} />
-              <Route path="/p/:id/pricing" element={<PricingSettings />} />
-              <Route path="/p/:id/review" element={<ProjectReviewPage />} />
-              <Route path="/p/:id/activity" element={<ActivityPage />} />
-              <Route path="*" element={<ProjectList />} />
-            </Routes>
+            <Suspense fallback={<main className="auth-page">Loading…</main>}>
+              <Routes>
+                <Route path="/" element={<ProjectList />} />
+                <Route path="/new" element={<NewProject />} />
+                <Route path="/settings/pricing" element={<PricingSettings />} />
+                <Route path="/p/:id" element={<ProjectView />} />
+                <Route path="/p/:id/m/:moduleId" element={<ProjectView />} />
+                <Route path="/p/:id/files" element={<ProjectReport page="files" />} />
+                <Route path="/p/:id/materials" element={<ProjectReport page="materials" />} />
+                <Route path="/p/:id/processes" element={<ProjectReport page="processes" />} />
+                <Route path="/p/:id/valuation" element={<ProjectReport page="valuation" />} />
+                <Route path="/p/:id/pricing" element={<PricingSettings />} />
+                <Route path="/p/:id/review" element={<ProjectReviewPage />} />
+                <Route path="/p/:id/activity" element={<ActivityPage />} />
+                <Route path="*" element={<ProjectList />} />
+              </Routes>
+            </Suspense>
           )}
         </HashRouter>
       </ErrorBoundary>
