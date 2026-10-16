@@ -6,8 +6,8 @@ Review of the Furniture Assistant web app against real-deployment requirements, 
 
 | Priority | Findings | Done | Partly done | Open |
 |---|---|---|---|---|
-| P0 — blocks real deployment | 6 | 3 | 2 | 1 |
-| P1 — needed before customer-facing use | 10 | 1 | 0 | 9 |
+| P0 — blocks real deployment | 6 | 2 | 1 | 3 |
+| P1 — needed before customer-facing use | 10 | 2 | 0 | 8 |
 | P2 — quality and robustness | 7 | 0 | 0 | 7 |
 
 Top 5 open items, in order of risk:
@@ -21,12 +21,12 @@ Top 5 open items, in order of risk:
 Done in this release (the review's "do now" list, each covered by tests in `tests/test_webapp_improvements.py`):
 
 - Session cookie `secure` flag via `FA_COOKIE_SECURE` (default `false`).
-- Upload limits: `FA_MAX_UPLOAD_MB` per file and `FA_MAX_FILES` per project, both returning HTTP 413.
+- Upload limits: `FA_MAX_REQUEST_MB` total request, `FA_MAX_UPLOAD_MB` per file and `FA_MAX_FILES` per project; oversized bodies are rejected before buffering.
 - Public `GET /api/health` endpoint (exempt from auth), reporting model URL, projects-root writability and auth state.
 - React `ErrorBoundary` around the router, so a render error shows a "Reload" page instead of a blank screen.
 - `WEB_PORT` Makefile variable (`make web WEB_PORT=8010`).
 
-Explicitly **not** implemented from the same list: the `analyze` 503 probe of the model server, the per-request total upload cap, and auto-detection of the cookie `secure` flag from a public URL (it is env-only; see the P0 table).
+Explicitly **not** implemented from the same list: the `analyze` 503 probe of the model server and auto-detection of the cookie `secure` flag from a public URL (it is env-only; see the P0 table).
 
 ## P0 — blocks real deployment
 
@@ -34,7 +34,7 @@ Explicitly **not** implemented from the same list: the `analyze` 503 probe of th
 |---|---|---|---|---|---|
 | Concurrency | Per-project locks and job tracking used to be process-local, preventing multiple API workers from safely sharing files. | `src/webapp/store.py` (`ProjectLock`: reentrant `threading.RLock` plus exclusive `fcntl.flock` on `<project>/.lock`); `src/webapp/api.py` (durable job ownership and heartbeat) | Done for multiple workers on one host and for multiple hosts using a shared filesystem with reliable `flock`; separate local disks or filesystems without working `flock` remain unsupported. | M | Done |
 | Session security | The `fa_session` cookie was set without `secure`, so the session could be replayed over plain HTTP once the app is exposed. | `src/webapp/api.py:181-191` (`set_cookie(..., httponly=True, samesite="lax", secure=secure)`), `src/webapp/auth.py:18` (`COOKIE_NAME = "fa_session"`) | Done: `secure` comes from `FA_COOKIE_SECURE` (default `false`). Note: the auto-detection from a public URL proposed in the review was **not** implemented — set the flag explicitly once TLS terminates in front of the app. | S | Done |
-| Upload limits | `create_project` previously accepted any number of any-size files (suffix check only); a 2 GB PDF or 500 files were rendered page-by-page into `pages/`. | `src/webapp/api.py:256-261` (suffix check, then `await f.read()` for every file, then `_check_upload_limits`), `src/webapp/api.py:274-282` (`FA_MAX_FILES` 50, `FA_MAX_UPLOAD_MB` 50 → 413) | Done: per-file and per-count limits with 413. Remaining: the size is checked **after** `await file.read()`, so an oversized request is still fully buffered in memory before rejection, and the planned per-request total cap (~200 MB) was not implemented — check `UploadFile.size` / stream, add a request-total limit. | M | Partly done |
+| Upload limits | `create_project` previously accepted any number of any-size files (suffix check only); a 2 GB PDF or 500 files were rendered page-by-page into `pages/`. | `src/webapp/api.py` (`UploadRequestLimitMiddleware` rejects oversized `Content-Length` before multipart parsing and bounds streamed bodies; `_check_upload_limits` checks `UploadFile.size` before `await f.read()`), `src/webapp/reports.py` (quote per-file check), `FA_MAX_FILES`/`FA_MAX_UPLOAD_MB` → 413 | Done: `FA_MAX_REQUEST_MB` (default 200 MB) enforces a request-body cap on project creation and quote import before multipart parsing for known lengths and while receiving chunked bodies; file-size and file-count limits remain enforced before application reads. | M | Done |
 | Secrets | `OPENAI_API_KEY` is loaded from a `.env` file inside the repo directory at startup; there is no secret manager, so anyone with repo-dir access reads the key. | `src/webapp/api.py:123` (`load_dotenv(REPO_ROOT / ".env")`) | Document env-only in production, never `.env` (see [Operations](operations.md)); move to a real secret manager before multi-host deployment. | S | Open |
 | Health / readiness | No health endpoint existed (now added), and there is still no readiness check of the model server before accepting `analyze`: the job is queued and only fails on its first page when the server is down or the model is not loaded. | `src/webapp/api.py:153-167` (health, public via `src/webapp/auth.py:140`), `src/webapp/api.py:285-299` (analyze queues without probing), `src/webapp/analysis.py:244-247` (first-page abort when the model never answers) | Done: `GET /api/health` → status/model URL/projects-root writability/auth. Remaining: `analyze` returns 503 with the model error when a short `GET {base_url}/models` fails. | S | Partly done |
 | Job durability | Analysis/refine jobs previously lived only in local `asyncio.Task` state and were lost on restart. | `src/webapp/store.py` (`Job.owner`, `heartbeat_at`, `kind`, `refine_module_id` in `job.json`); `src/webapp/api.py` (`_recover_jobs`, `_run_job_with_heartbeat`); `src/webapp/analysis.py` (restart clears modules and reruns analysis) | Done: startup claims stale analysis jobs under the project lock and resumes from a clean module set; interrupted refine jobs become explicit errors and must be started again. | M | Done |
@@ -51,7 +51,7 @@ Explicitly **not** implemented from the same list: the `analyze` 503 probe of th
 | Backups / retention | State is plain files with no backup job and no retention for `history-archive-*` and the `pages/` PNG cache (hundreds of MB per multi-page PDF). | `src/webapp/store.py:7-10` (layout, page-render cache), `src/webapp/store.py:294-295` (archives), store root under `results/` (`src/webapp/api.py:130`) | Documented backup of `results/webapp`; cleanup task for archives and page renders older than N days. | S | Open |
 | Frontend structure | One ~1.3 MB JS chunk, no code splitting; `ModuleView.tsx` is 1142 lines and `Reports.tsx` 833; 3 `set-state-in-effect` lint warnings (re-verified with `npm run lint`). | `webapp/dist/assets/index-BaU_FseK.js` (1,322,409 bytes, single chunk), `webapp/src/ModuleView.tsx`, `webapp/src/Reports.tsx`; warnings at `webapp/src/ProjectView.tsx:129`, `webapp/src/Reports.tsx:61`, `webapp/src/Reports.tsx:481` | Route-level `React.lazy`; split `ModuleView` into Review/Editor/Header components; derive the effect-set state during render. | M | Open |
 | Frontend resilience | A render error used to blank the whole page (no error boundary). | `webapp/src/ErrorBoundary.tsx`, wrapped around the router at `webapp/src/App.tsx:63-116` | Done: boundary shows the error and a "Reload" button. | S | Done |
-| Type gate | Pre-existing `ty` diagnostics in `src/tools`, `src/pipeline` and the legacy tests block a full-repo type check, so CI scopes the gate to the new code. | `.github/workflows/ci.yml:25-26` ("legacy pipeline has pre-existing diagnostics" → `uvx ty check src/furniture src/webapp`) | Fix the diagnostics or exclude the legacy paths via `ty.toml`, then widen the CI gate. | M | Open |
+| Type gate | The whole repository now passes `ty`; no path exclusions or rule overrides are needed. | `uvx ty check` reports `All checks passed!`; `.github/workflows/ci.yml:23-26` runs the full-repository formatter and type gate. | Done: fixed genuine type issues in legacy modules and tests; CI now checks the entire repository. | M | Done |
 | Quote comparison | Matches by cabinet code only; an unmatched line (for example a sanitary-block cabinet priced under a label with no code) cannot be mapped manually. | `src/furniture/quote.py:92-106` (code→module lookup; `app_amount` stays `None` when nothing matches) | Manual code assignment in the quote UI. | M | Open |
 
 ## P2 — quality and robustness

@@ -6,6 +6,7 @@ Run: ``make web`` (uvicorn on 127.0.0.1:8000). Serves ``webapp/dist`` at ``/`` w
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import secrets
 import socket
@@ -56,6 +57,66 @@ from src.webapp.store import (
     ProjectStore,
     now_iso,
 )
+from src.webapp.upload_limits import check_file_size
+
+
+class RequestTooLarge(Exception):
+    pass
+
+
+class UploadRequestLimitMiddleware:
+    """Reject upload request bodies above the configured cap before buffering them."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope["method"] != "POST" or not _is_upload_path(scope["path"]):
+            await self.app(scope, receive, send)
+            return
+
+        limit = _env_int("FA_MAX_REQUEST_MB", 200) * 1024 * 1024
+        headers = dict(scope["headers"])
+        content_length = headers.get(b"content-length")
+        if content_length:
+            try:
+                if int(content_length) > limit:
+                    await self._respond_too_large(send, limit)
+                    return
+            except ValueError:
+                pass
+
+        received = 0
+
+        async def limited_receive():
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > limit:
+                    raise RequestTooLarge
+            return message
+
+        try:
+            await self.app(scope, limited_receive, send)
+        except RequestTooLarge:
+            await self._respond_too_large(send, limit)
+
+    @staticmethod
+    async def _respond_too_large(send, limit: int) -> None:
+        body = json.dumps({"detail": f"Request exceeds {limit // (1024 * 1024)} MB"}).encode()
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 413,
+                "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
+
+
+def _is_upload_path(path: str) -> bool:
+    return path == "/api/projects" or (path.startswith("/api/projects/") and path.endswith("/quote"))
 
 
 class StatusResponse(BaseModel):
@@ -149,6 +210,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
 app = FastAPI(title="Furniture Assistant", lifespan=lifespan)
 app.middleware("http")(auth_middleware)
+app.add_middleware(UploadRequestLimitMiddleware)
 # Before this module's routes: /export/valuation.xlsx must win over the generic /export/{fmt}.
 app.include_router(reports.router)
 
@@ -436,8 +498,8 @@ async def create_project(
     if rejected or not files:
         detail = f"Unsupported file type: {', '.join(str(r) for r in rejected)}" if rejected else "No files uploaded"
         raise HTTPException(400, detail)
+    await _check_upload_limits(files)
     uploads = [(f.filename or "upload", await f.read()) for f in files]
-    _check_upload_limits(uploads)
     store = _store(request)
     project = store.create_project(name, uploads)
     with store.lock(project.id):
@@ -450,15 +512,14 @@ def _env_int(name: str, default: int) -> int:
     return int(value) if value else default
 
 
-def _check_upload_limits(uploads: list[tuple[str, bytes]]) -> None:
-    """413 when a project has too many files or one file is too large (FA_MAX_FILES, FA_MAX_UPLOAD_MB per file)."""
+async def _check_upload_limits(files: list[UploadFile]) -> None:
+    """413 when a project has too many files or one file is too large."""
     max_files = _env_int("FA_MAX_FILES", 50)
     max_mb = _env_int("FA_MAX_UPLOAD_MB", 50)
-    if len(uploads) > max_files:
+    if len(files) > max_files:
         raise HTTPException(413, f"At most {max_files} files per project")
-    for file_name, data in uploads:
-        if len(data) > max_mb * 1024 * 1024:
-            raise HTTPException(413, f"File {file_name} exceeds {max_mb} MB")
+    for file in files:
+        await check_file_size(file, max_mb)
 
 
 @app.post("/api/projects/{project_id}/analyze", status_code=202)

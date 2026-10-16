@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 
 import pytest
@@ -10,6 +11,32 @@ from src.furniture.schema import FurnitureModule, MaterialSpec, ModuleModel
 from src.webapp import api
 
 from tests.conftest import sample_file
+
+
+def test_upload_request_limit_bounds_streamed_body_without_content_length(monkeypatch):
+    monkeypatch.setenv("FA_MAX_REQUEST_MB", "0")
+    middleware = api.UploadRequestLimitMiddleware(None)
+    messages = iter([{"type": "http.request", "body": b"x", "more_body": True}])
+    sent = []
+
+    async def receive():
+        return next(messages)
+
+    async def send(message):
+        sent.append(message)
+
+    async def downstream(scope, receive, send):
+        await receive()
+
+    middleware.app = downstream
+    asyncio.run(
+        middleware(
+            {"type": "http", "method": "POST", "path": "/api/projects", "headers": []},
+            receive,
+            send,
+        )
+    )
+    assert sent[0]["status"] == 413
 
 
 @pytest.fixture
@@ -84,6 +111,36 @@ def test_upload_limits_return_413(client, monkeypatch):
     assert response.status_code == 413
     assert response.json()["detail"] == "At most 1 files per project"
     assert client.get("/api/projects").json() == []
+
+
+def test_total_upload_limit_rejects_before_project_creation(client, monkeypatch):
+    monkeypatch.setenv("FA_MAX_REQUEST_MB", "0")
+    response = client.post("/api/projects", files=[("files", ("cabinet.png", b"png", "image/png"))])
+    assert response.status_code == 413
+    assert response.json()["detail"] == "Request exceeds 0 MB"
+    root = api.app.state.store.root
+    assert not root.exists() or list(root.iterdir()) == []
+
+
+def test_quote_upload_obeys_request_limit(client, monkeypatch):
+    project_id = _create(client)
+    quote_file = {
+        "file": (
+            "quote.xlsx",
+            b"not a workbook",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    }
+    monkeypatch.setenv("FA_MAX_UPLOAD_MB", "0")
+    oversized_file = client.post(f"/api/projects/{project_id}/quote", files=quote_file)
+    assert oversized_file.status_code == 413
+    assert oversized_file.json()["detail"] == "File quote.xlsx exceeds 0 MB"
+
+    monkeypatch.delenv("FA_MAX_UPLOAD_MB")
+    monkeypatch.setenv("FA_MAX_REQUEST_MB", "0")
+    response = client.post(f"/api/projects/{project_id}/quote", files=quote_file)
+    assert response.status_code == 413
+    assert response.json()["detail"] == "Request exceeds 0 MB"
 
 
 def test_audit_history_restore_and_review(client, two_door_module):
