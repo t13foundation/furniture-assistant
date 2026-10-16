@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link, NavLink, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api } from './api'
-import ModuleView from './ModuleView'
 import { useAuth } from './auth'
 import type { Job, ModuleModel, ProjectDetail, ProjectSummary } from './types'
 
@@ -13,6 +12,8 @@ function UsageSummary({ title, usage }: { title: string; usage: Job['usage'] }) 
     </span>
   )
 }
+
+const ModuleView = lazy(() => import('./ModuleView'))
 
 export function ProjectList() {
   const [projects, setProjects] = useState<ProjectSummary[]>([])
@@ -128,18 +129,16 @@ export default function ProjectView() {
     }
   }, [id, detail?.job?.status])
   const selectedModuleId = moduleId ?? detail?.modules[0]?.module_id
-  const selection = useRef({ id, moduleId: selectedModuleId })
+  const selection = useRef({ id, moduleId: selectedModuleId, locationKey: location.key })
   useLayoutEffect(() => {
     projectIdRef.current = id
-    selection.current = { id, moduleId: selectedModuleId }
-  }, [id, selectedModuleId])
+    selection.current = { id, moduleId: selectedModuleId, locationKey: location.key }
+  }, [id, selectedModuleId, location.key])
   const projectLoaded = detail?.project.id === id
   useEffect(() => {
-    setModel(null)
-    setLoadedKey('')
     if (!projectLoaded || !selectedModuleId) return
     let active = true
-    const key = `${id}:${selectedModuleId}`
+    const key = `${id}:${selectedModuleId}:${location.key}`
     void api<ModuleModel>(
       `/api/projects/${encodeURIComponent(id)}/modules/${encodeURIComponent(selectedModuleId)}`,
     )
@@ -155,12 +154,12 @@ export default function ProjectView() {
     return () => {
       active = false
     }
-  }, [projectLoaded, id, selectedModuleId])
+  }, [projectLoaded, id, selectedModuleId, location.key])
   const updateModel = useCallback(
     (value: ModuleModel) => {
       if (selection.current.id === id && selection.current.moduleId === value.module.module_id) {
         setModel(value)
-        setLoadedKey(`${id}:${value.module.module_id}`)
+        setLoadedKey(`${id}:${value.module.module_id}:${selection.current.locationKey}`)
       }
       if (selection.current.id === id) void refresh()
     },
@@ -179,7 +178,9 @@ export default function ProjectView() {
     detail?.job?.items.filter((item) => ['done', 'skipped', 'error'].includes(item.status)).length ?? 0
   const total = detail?.job?.items.length ?? 0
   const selectedModel =
-    model?.module.module_id === selectedModuleId && loadedKey === `${id}:${selectedModuleId}` ? model : null
+    model?.module.module_id === selectedModuleId && loadedKey === `${id}:${selectedModuleId}:${location.key}`
+      ? model
+      : null
   return (
     <div className="project-layout">
       <ProjectSidebar id={id} detail={detail} moduleId={selectedModuleId} />
@@ -205,13 +206,21 @@ export default function ProjectView() {
           </button>
         )}
         {selectedModel ? (
-          <ModuleView
-            key={`${id}:${selectedModuleId}`}
-            id={id}
-            model={selectedModel}
-            files={detail?.project.files ?? []}
-            onUpdate={updateModel}
-          />
+          <Suspense
+            fallback={
+              <div className="empty-state">
+                <h2>Loading module…</h2>
+              </div>
+            }
+          >
+            <ModuleView
+              key={`${id}:${selectedModuleId}`}
+              id={id}
+              model={selectedModel}
+              files={detail?.project.files ?? []}
+              onUpdate={updateModel}
+            />
+          </Suspense>
         ) : (
           <div className="empty-state">
             <h2>
@@ -307,7 +316,7 @@ export function ProjectSidebar({
               <input
                 aria-label="Project name"
                 maxLength={120}
-                value={projectName?.id === id ? projectName.name : detail?.project.name ?? ''}
+                value={projectName?.id === id ? projectName.name : (detail?.project.name ?? '')}
                 onChange={(event) => setProjectName({ id, name: event.target.value })}
               />
               <button className="button primary" onClick={() => void saveProjectName()}>
