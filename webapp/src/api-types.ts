@@ -962,23 +962,6 @@ export interface components {
             /** Cell Ids */
             cell_ids: string[];
         };
-        /** Job */
-        Job: {
-            /**
-             * Status
-             * @default queued
-             * @enum {string}
-             */
-            status: "queued" | "running" | "done" | "error";
-            /** Started At */
-            started_at: string | null;
-            /** Finished At */
-            finished_at: string | null;
-            /** Items */
-            items: components["schemas"]["JobItem"][];
-            /** Error */
-            error: string | null;
-        };
         /** JobItem */
         JobItem: {
             /** File Index */
@@ -995,6 +978,26 @@ export interface components {
             module_ids: string[];
             /** Error */
             error: string | null;
+        };
+        /** JobResponse */
+        JobResponse: {
+            /**
+             * Status
+             * @default queued
+             * @enum {string}
+             */
+            status: "queued" | "running" | "done" | "error";
+            /** Started At */
+            started_at: string | null;
+            /** Finished At */
+            finished_at: string | null;
+            /** Items */
+            items: components["schemas"]["JobItem"][];
+            /** Error */
+            error: string | null;
+            usage: components["schemas"]["UsageTotals"];
+            /** Usage Breakdown */
+            usage_breakdown: components["schemas"]["UsageBreakdown"][];
         };
         /** LoginBody */
         LoginBody: {
@@ -1424,7 +1427,8 @@ export interface components {
         /** ProjectDetailResponse */
         ProjectDetailResponse: {
             project: components["schemas"]["Project"];
-            job: components["schemas"]["Job"] | null;
+            job: components["schemas"]["JobResponse"] | null;
+            usage: components["schemas"]["UsageTotals"];
             /** Modules */
             modules: components["schemas"]["ModuleListEntry"][];
         };
@@ -1593,6 +1597,36 @@ export interface components {
              * @default
              */
             reason: string;
+        };
+        /** UsageBreakdown */
+        UsageBreakdown: {
+            /** File Name */
+            file_name: string;
+            /** Page Index */
+            page_index: number;
+            /** Module Id */
+            module_id: string | null;
+            usage: components["schemas"]["UsageTotals"];
+        };
+        /** UsageTotals */
+        UsageTotals: {
+            /**
+             * Requests
+             * @default 0
+             */
+            requests: number;
+            /**
+             * Input Tokens
+             * @default 0
+             */
+            input_tokens: number;
+            /**
+             * Output Tokens
+             * @default 0
+             */
+            output_tokens: number;
+            /** Estimated Cost */
+            estimated_cost: number | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -2198,6 +2232,13 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description Model server unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     get_project_api_projects__project_id__get: {
@@ -2619,6 +2660,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description Model server unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
