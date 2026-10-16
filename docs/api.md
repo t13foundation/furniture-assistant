@@ -6,7 +6,7 @@ All endpoints are JSON under `/api/`. The table below is generated from `webapp/
 
 ## Authentication
 
-Auth is enabled as soon as the users file (`FA_USERS_FILE`, default `config/users.yaml`) contains at least one user; while it is empty every endpoint is public. When enabled, every `/api/*` request except the four public paths requires the session cookie `fa_session` (set by login; `httponly`, `samesite=lax`, 7-day expiry, `secure` only when `FA_COOKIE_SECURE` is set — see [Operations](operations.md)). Missing or expired sessions get `401 {"detail": "Authentication required"}`. The middleware lives in `src/webapp/auth.py`.
+Auth is enabled as soon as the users file (`FA_USERS_FILE`, default `config/users.yaml`) contains at least one user; while it is empty every endpoint is public. When enabled, every `/api/*` request except the four public paths requires the session cookie `fa_session` (set by login; `httponly`, `samesite=lax`, 7-day expiry; its `secure` flag defaults to production/HTTPS and can be overridden with a valid `FA_COOKIE_SECURE` boolean spelling — see [Operations](operations.md)). Missing or expired sessions get `401 {"detail": "Authentication required"}`. The middleware lives in `src/webapp/auth.py`.
 
 ## Auth and health (public)
 
@@ -27,9 +27,9 @@ Auth is enabled as soon as the users file (`FA_USERS_FILE`, default `config/user
 | POST | `/api/projects` | multipart `files[]` + form `name` | `201 {id}` | cookie |
 | GET | `/api/projects/{project_id}` | — | `ProjectDetailResponse {project, job, usage, modules}` | cookie |
 
-Uploads accept the drawing extensions `.pdf .tif .tiff .png .jpg .jpeg .dwg .p3d`. Limits are enforced per request: `FA_MAX_UPLOAD_MB` (default 50 MB per file) and `FA_MAX_FILES` (default 50 files) — both return `413`.
+Project and quote uploads are capped by `FA_MAX_REQUEST_MB` (default 200 MB, total multipart body) and rejected with `413` before parsing when `Content-Length` exceeds the cap. Requests streamed without `Content-Length` are capped as chunks arrive. Project uploads also enforce `FA_MAX_UPLOAD_MB` (default 50 MB per file) and `FA_MAX_FILES` (default 50 files); these limits return `413`. Quote imports enforce the same per-file cap.
 
-The detail response is the polling endpoint: `job` is the current analysis job (`status` `queued → running → done | error`, per-page `items` with `pending/running/done/skipped/error` and produced `module_ids`), and `modules` lists every module with `status`, `question_count`, `attention_count`, `refine_status` and error/warning `issue_counts`. `job.usage` is the token/request total for that analysis, with `job.usage_breakdown` grouped by page and module; top-level `usage` is the cumulative project total, including manual refinements. Estimated cost is `null` unless both model input and output rates are configured. A job left `queued`/`running` by a server restart is reported as `error` ("Analysis interrupted (server restarted)") — run the analysis again.
+The detail response is the polling endpoint: `job` is the current job — the analysis, or a manual "Ask the model again" run (`status` `queued → running → done | error`, per-page `items` with `pending/running/done/skipped/error` and produced `module_ids`) — and `modules` lists every module with `status`, `question_count`, `attention_count`, `refine_status` and error/warning `issue_counts`. `job.usage` is the token/request total of that job, with `job.usage_breakdown` grouped by page and module; top-level `usage` is the cumulative project total across all jobs. Estimated cost is `null` unless both model input and output rates are configured, and is computed from the stored token totals at the current rates. Reading a stale `queued`/`running` job claims and resumes an analysis from the beginning; an interrupted refine is reported as `error` and must be started again.
 
 ## Analysis
 
@@ -118,7 +118,7 @@ The upload is stored as `quote.xlsx` (original) and `quote.json` (parsed lines) 
 | 401 | missing/expired session on a non-public path; wrong credentials at login |
 | 404 | unknown project, module, version or page; no client quote uploaded yet |
 | 409 | `analyze` while an analysis or model re-run is in flight; `refine` while one is already running or the project is being analysed |
-| 413 | a file exceeds `FA_MAX_UPLOAD_MB`, or more than `FA_MAX_FILES` files in one project |
+| 413 | a request exceeds `FA_MAX_REQUEST_MB`, a file exceeds `FA_MAX_UPLOAD_MB`, or more than `FA_MAX_FILES` files are uploaded to one project |
 | 422 | request validation; module assembly errors on PUT/answers (e.g. an override a module cannot take); refine on a hand-made module (no model interpretation); unreadable quote workbook |
 | 429 | login throttled (5 failures per ip+username within 15 min → 5 min lock) |
 

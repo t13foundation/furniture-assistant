@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from config.agent_prompts import MODULE_INTERPRETATION_PROMPT, MODULE_REFINE_PROMPT
 from pydantic_ai import Agent, BinaryContent
@@ -110,7 +110,7 @@ async def interpret_page(
     chains: list[DimensionChain],
     text_runs: list[TextRun],
     units: Unit,
-    on_usage: Callable[[object], None] | None = None,
+    on_usage: Callable[[RunUsage], Awaitable[None]] | None = None,
 ) -> PageDraft:
     usage = RunUsage()
     try:
@@ -121,7 +121,7 @@ async def interpret_page(
         )
     finally:
         if on_usage:
-            on_usage(usage)
+            await on_usage(usage)
     return result.output
 
 
@@ -157,7 +157,7 @@ async def refine_draft(
     image_png: bytes,
     module: FurnitureModule,
     draft: ModuleDraft,
-    on_usage: Callable[[object], None] | None = None,
+    on_usage: Callable[[RunUsage], Awaitable[None]] | None = None,
 ) -> ModuleDraft:
     """Ask the model once more for the module's open questions; returns the full corrected draft."""
     usage = RunUsage()
@@ -169,5 +169,5 @@ async def refine_draft(
         )
     finally:
         if on_usage:
-            on_usage(usage)
+            await on_usage(usage)
     return result.output.model_copy(update={"module_id": draft.module_id})

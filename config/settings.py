@@ -4,7 +4,7 @@ import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 
@@ -52,9 +52,9 @@ class DocumentConfig:
     title_block_max_px: int = 4000
     grid_divisions: int = 10
     pdf_render_scale: float = 2.0
-    overview_format: str = "JPEG"
+    overview_format: Literal["PNG", "JPEG"] = "JPEG"
     overview_quality: int = 75
-    detail_format: str = "JPEG"
+    detail_format: Literal["PNG", "JPEG"] = "JPEG"
     detail_quality: int = 70
     tile_overlap: float = 0.15
 

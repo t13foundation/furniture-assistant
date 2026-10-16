@@ -119,11 +119,11 @@ def test_feedback_loop_reruns_model_then_takes_user_answers(client, monkeypatch)
     from types import SimpleNamespace
 
     async def interpret(*_args, **kwargs):
-        kwargs["on_usage"](SimpleNamespace(requests=1, input_tokens=100, output_tokens=20))
+        await kwargs["on_usage"](SimpleNamespace(requests=1, input_tokens=100, output_tokens=20))
         return first
 
     async def refine(_agent, _image, module, draft, **kwargs):
-        kwargs["on_usage"](SimpleNamespace(requests=1, input_tokens=30, output_tokens=10))
+        await kwargs["on_usage"](SimpleNamespace(requests=1, input_tokens=30, output_tokens=10))
         refine_calls.append([q.id for q in module.questions])
         # The model finds the materials but still not the width.
         materials = [MaterialSpec(key="M1", name="Płyta biała", kind="laminated_board")]
@@ -191,7 +191,9 @@ def test_feedback_loop_reruns_model_then_takes_user_answers(client, monkeypatch)
     final_detail = client.get(f"/api/projects/{project_id}").json()
     assert final_detail["usage"]["requests"] == 5
     assert final_detail["usage"]["input_tokens"] == 290
-    assert final_detail["job"]["usage"]["requests"] == 4
+    # The manual re-run is its own job: its usage is that one model call; the project total keeps everything.
+    assert final_detail["job"]["usage"]["requests"] == 1
+    assert final_detail["job"]["usage"]["input_tokens"] == 30
 
 
 def test_refine_needs_a_model_interpretation(client, two_door_module):
