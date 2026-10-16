@@ -37,6 +37,8 @@ test('upload a drawing and get an analysed 3D module', async ({ page }) => {
   await expect(page).toHaveURL(/#\/p\/[^/]+$/)
   projectUrl = page.url()
   await expect(page.getByRole('link', { name: /Szafa testowa/ }).first()).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByText(/Project total: \d+ requests · \d+ input \/ \d+ output tokens/)).toBeVisible()
+  await expect(page.getByText(/This analysis: \d+ requests · \d+ input \/ \d+ output tokens/)).toBeVisible()
 
   await page
     .getByRole('link', { name: /Szafa testowa/ })
@@ -126,4 +128,28 @@ test('narrow screens hide the sidebar behind a menu button', async ({ page }) =>
   await expect(page.getByRole('link', { name: /Szafa testowa/ }).first()).toBeHidden()
   await menu.click()
   await expect(page.getByRole('link', { name: /Szafa testowa/ }).first()).toBeVisible()
+})
+
+test('rename and delete a project', async ({ page }) => {
+  await page.goto('/#/new')
+  await page.getByPlaceholder('e.g. Apartment 04').fill('Rename delete e2e')
+  await page.locator('input[type="file"]').setInputFiles(drawing)
+  await page.getByRole('button', { name: 'Run analysis' }).click()
+  await expect(page).toHaveURL(/#\/p\/[^/]+$/)
+  await expect(page.getByRole('link', { name: /Szafa testowa/ }).first()).toBeVisible({ timeout: 60_000 })
+
+  await page.getByRole('button', { name: 'Rename project' }).click()
+  await page.getByLabel('Project name').fill('Unsaved E2E project')
+  await page.getByRole('button', { name: 'Cancel rename' }).click()
+  await expect(page.getByText('Rename delete e2e')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Rename project' }).click()
+  await page.getByLabel('Project name').fill('Renamed E2E project')
+  await page.getByRole('button', { name: 'Save project name' }).click()
+  await expect(page.getByText('Renamed E2E project')).toBeVisible()
+
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: 'Delete project' }).click()
+  await expect(page).toHaveURL(/#\/$/)
+  await expect(page.getByText(/Rename delete e2e|Renamed E2E project/)).toHaveCount(0)
 })

@@ -17,7 +17,7 @@ from src.webapp.api import app
 # their fields stay optional in the generated TS.
 CLIENT_BUILT = {"Override", "AnswersBody", "LoginBody", "QuoteAssignment"}
 # Request bodies the client round-trips whole (loaded, edited, sent back): every field is present.
-ROUND_TRIPPED = {"FurnitureModule", "Pricing"}
+ROUND_TRIPPED = {"FurnitureModule", "Pricing", "ProjectNameBody"}
 
 
 def _request_body_schemas(spec: dict[str, Any]) -> set[str]:

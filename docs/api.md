@@ -6,7 +6,7 @@ All endpoints are JSON under `/api/`. The table below is generated from `webapp/
 
 ## Authentication
 
-Auth is enabled as soon as the users file (`FA_USERS_FILE`, default `config/users.yaml`) contains at least one user; while it is empty every endpoint is public. When enabled, every `/api/*` request except the four public paths requires the session cookie `fa_session` (set by login; `httponly`, `samesite=lax`, 7-day expiry, `secure` only when `FA_COOKIE_SECURE` is set — see [Operations](operations.md)). Missing or expired sessions get `401 {"detail": "Authentication required"}`. The middleware lives in `src/webapp/auth.py`.
+Auth is enabled as soon as the users file (`FA_USERS_FILE`, default `config/users.yaml`) contains at least one user; while it is empty every endpoint is public. When enabled, every `/api/*` request except the four public paths requires the session cookie `fa_session` (set by login; `httponly`, `samesite=lax`, 7-day expiry; its `secure` flag defaults to production/HTTPS and can be overridden with a valid `FA_COOKIE_SECURE` boolean spelling — see [Operations](operations.md)). Missing or expired sessions get `401 {"detail": "Authentication required"}`. The middleware lives in `src/webapp/auth.py`.
 
 ## Auth and health (public)
 
@@ -25,19 +25,21 @@ Auth is enabled as soon as the users file (`FA_USERS_FILE`, default `config/user
 |---|---|---|---|---|
 | GET | `/api/projects` | — | `ProjectListResponse[]` — project fields plus `job_status`, `module_count` | cookie |
 | POST | `/api/projects` | multipart `files[]` + form `name` | `201 {id}` | cookie |
-| GET | `/api/projects/{project_id}` | — | `ProjectDetailResponse {project, job, modules}` | cookie |
+| GET | `/api/projects/{project_id}` | — | `ProjectDetailResponse {project, job, usage, modules}` | cookie |
+| PATCH | `/api/projects/{project_id}` | `ProjectNameBody {name}` (trimmed, 1–120 characters) | `Project` | cookie |
+| DELETE | `/api/projects/{project_id}` | — | `204`; moves project to trash | cookie |
 
-Uploads accept the drawing extensions `.pdf .tif .tiff .png .jpg .jpeg .dwg .p3d`. Limits are enforced per request: `FA_MAX_UPLOAD_MB` (default 50 MB per file) and `FA_MAX_FILES` (default 50 files) — both return `413`.
+Uploads accept the drawing extensions `.pdf .tif .tiff .png .jpg .jpeg .dwg .p3d`. Project and quote uploads are capped by `FA_MAX_REQUEST_MB` (default 200 MB, total multipart body) and rejected with `413` before parsing when `Content-Length` exceeds the cap. Requests streamed without `Content-Length` are capped as chunks arrive. Project uploads also enforce `FA_MAX_UPLOAD_MB` (default 50 MB per file) and `FA_MAX_FILES` (default 50 files); these limits return `413`. Quote imports enforce the same per-file cap.
 
-The detail response is the polling endpoint: `job` is the current analysis job (`status` `queued → running → done | error`, per-page `items` with `pending/running/done/skipped/error` and produced `module_ids`), and `modules` lists every module with `status`, `question_count`, `attention_count`, `refine_status` and error/warning `issue_counts`. A job left `queued`/`running` by a server restart is reported as `error` ("Analysis interrupted (server restarted)") — run the analysis again.
+The detail response is the polling endpoint: `job` is the current job — the analysis, or a manual "Ask the model again" run (`status` `queued → running → done | error`, per-page `items` with `pending/running/done/skipped/error` and produced `module_ids`) — and `modules` lists every module with `status`, `question_count`, `attention_count`, `refine_status` and error/warning `issue_counts`. `job.usage` is the token/request total of that job, with `job.usage_breakdown` grouped by page and module; top-level `usage` is the cumulative project total across all jobs. Estimated cost is `null` unless both model input and output rates are configured, and is computed from the stored token totals at the current rates. Reading a stale `queued`/`running` job claims and resumes an analysis from the beginning; an interrupted refine is reported as `error` and must be started again.
 
 ## Analysis
 
 | Method | Path | Request | Response | Auth |
 |---|---|---|---|---|
-| POST | `/api/projects/{project_id}/analyze` | — | `202 StatusResponse {status: "queued"}` | cookie |
+| POST | `/api/projects/{project_id}/analyze` | — | `202 StatusResponse {status: "queued"}` or `503 {"detail": ...}` | cookie |
 
-Queues the background job that renders every page, extracts dimension marks, runs the interpretation agent per page, resolves modules and rebuilds them (sequence diagram in [Architecture](architecture.md)). `409` if an analysis or model re-run is already in flight for the project.
+Queues the background job that renders every page, extracts dimension marks, runs the interpretation agent per page, resolves modules and rebuilds them (sequence diagram in [Architecture](architecture.md)). Before queueing, the API probes `GET {FA_API_BASE}/models` with a 5-second timeout; a connection failure, timeout or non-2xx response returns `503` naming the model URL, without creating a job. `409` if an analysis or model re-run is already in flight for the project.
 
 ## Modules
 
@@ -46,14 +48,14 @@ Queues the background job that renders every page, extracts dimension marks, run
 | GET | `/api/projects/{project_id}/modules/{module_id}` | — | `ModuleModel` | cookie |
 | PUT | `/api/projects/{project_id}/modules/{module_id}` | `FurnitureModule` | `ModuleModel` | cookie |
 | POST | `/api/projects/{project_id}/modules/{module_id}/answers` | `AnswersBody {overrides: Override[]}` | `ModuleModel` | cookie |
-| POST | `/api/projects/{project_id}/modules/{module_id}/refine` | — | `202 StatusResponse {status: "running"}` | cookie |
+| POST | `/api/projects/{project_id}/modules/{module_id}/refine` | — | `202 StatusResponse {status: "running"}` or `503 {"detail": ...}` | cookie |
 | GET | `/api/projects/{project_id}/modules/{module_id}/versions` | — | `ModuleVersion[]` | cookie |
 | GET | `/api/projects/{project_id}/modules/{module_id}/versions/{version}` | — | `ModuleModel` | cookie |
 | POST | `/api/projects/{project_id}/modules/{module_id}/versions/{version}/restore` | — | `ModuleModel` | cookie |
 
 - **PUT** is the editor save: the backend converts the edited module into overrides on the model's interpretation, merges them with existing ones, re-runs checks and rebuilds (see [Review workflow](review-workflow.md#editing)).
 - **answers** applies review-tab answers; an override without values removes that target's override; an empty list just re-runs the checks and rebuilds.
-- **refine** is the "Ask the model again" button — a background model re-run; poll the module until `refine_status` leaves `running`. The result is kept only if it closes gaps ([Review workflow](review-workflow.md#ask-the-model-again)).
+- **refine** is the "Ask the model again" button — a background model re-run; poll the module until `refine_status` leaves `running`. The result is kept only if it closes gaps ([Review workflow](review-workflow.md#ask-the-model-again)). Before scheduling the run, the API performs the same 5-second model-server probe as `analyze`; a failed probe returns `503` without changing the module or audit log.
 - **restore** does not rewind: it saves the old version as a new version and re-runs the project cross-checks.
 
 Module fields, override targets and issue codes are documented in [Data model](data-model.md).
@@ -63,7 +65,9 @@ Module fields, override targets and issue codes are documented in [Data model](d
 | Method | Path | Request | Response | Auth |
 |---|---|---|---|---|
 | GET | `/api/projects/{project_id}/review` | — | `ReviewEntry[]` — per module: id, title, group, kind, status, `questions` | cookie |
-| GET | `/api/projects/{project_id}/activity` | — | `ActivityEntry[]` from `audit.jsonl` (`at`, `user`, `action`, `module_id`, `detail`) | cookie |
+| GET | `/api/projects/{project_id}/activity` | — | `ActivityEntry[]` (legacy list contract) | cookie |
+| GET | `/api/projects/{project_id}/activity/integrity` | — | `ActivityIntegrityResponse` — `chain_status`, `chain_error`, `head_hash` | cookie |
+| GET | `/api/projects/{project_id}/audit.jsonl` | — | Raw `application/x-ndjson` audit log download | cookie |
 
 ## Reports
 
@@ -118,8 +122,8 @@ The upload is stored as `quote.xlsx` (original) and `quote.json` (parsed lines a
 | 400 | upload with no files or an unsupported extension; client quote that is not `.xlsx` |
 | 401 | missing/expired session on a non-public path; wrong credentials at login |
 | 404 | unknown project, module, version or page; no client quote uploaded yet |
-| 409 | `analyze` while an analysis or model re-run is in flight; `refine` while one is already running or the project is being analysed |
-| 413 | a file exceeds `FA_MAX_UPLOAD_MB`, or more than `FA_MAX_FILES` files in one project |
+| 409 | `analyze` while an analysis or model re-run is in flight; `refine` while one is already running or the project is being analysed; project deletion while a job is running |
+| 413 | a request exceeds `FA_MAX_REQUEST_MB`, a file exceeds `FA_MAX_UPLOAD_MB`, or more than `FA_MAX_FILES` files are uploaded to one project |
 | 422 | request validation; module assembly errors on PUT/answers (e.g. an override a module cannot take); refine on a hand-made module (no model interpretation); unreadable quote workbook |
 | 429 | login throttled (5 failures per ip+username within 15 min → 5 min lock) |
 
