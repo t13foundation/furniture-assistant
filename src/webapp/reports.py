@@ -36,6 +36,7 @@ def _workspace_pricing_lock() -> Generator[None]:
         finally:
             fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
+
 router = APIRouter()
 
 
