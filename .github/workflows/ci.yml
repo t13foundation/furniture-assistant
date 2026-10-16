@@ -20,10 +20,10 @@ jobs:
       - run: uv sync
       - name: Ruff lint
         run: uv run ruff check .
-      - name: Ruff format (web app code; legacy pipeline files are not format-checked)
-        run: uv run ruff format --check src/furniture src/webapp tests/test_furniture_*.py tests/test_webapp_*.py
-      - name: Type check (web app code; legacy pipeline has pre-existing diagnostics)
-        run: uvx ty check src/furniture src/webapp
+      - name: Ruff format
+        run: uv run ruff format --check .
+      - name: Type check
+        run: uvx ty check
       - name: Tests
         run: uv run pytest -q
 
