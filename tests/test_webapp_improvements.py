@@ -385,6 +385,131 @@ def test_project_pricing_markup_and_quote_comparison(client, two_door_module):
     assert reverted.status_code == 200 and reverted.json()["inherited"] is True
 
 
+def test_quote_manual_assignment_ignored_line_and_reimport(client, two_door_module):
+    project_id = _create(client)
+    assert (
+        client.put(f"/api/projects/{project_id}/modules/TEST", json=two_door_module.model_dump(mode="json")).status_code
+        == 200
+    )
+    workbook = Workbook()
+    workbook.active.append(["ELEMENTY DODATKOWE", 50000])
+    workbook.active.append(["POZYCJA DO POMINIĘCIA", 70000])
+    stream = io.BytesIO()
+    workbook.save(stream)
+    upload = {
+        "file": (
+            "quote.xlsx",
+            stream.getvalue(),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    }
+    url = f"/api/projects/{project_id}/quote"
+    compared = client.post(url, files=upload).json()
+    assert compared["comparison"][0]["match"] == "none"
+    modules_url = f"/api/projects/{project_id}"
+    module_id = client.get(modules_url).json()["modules"][0]["module_id"]
+    assignment_url = f"{url}/assignments"
+    mapped = client.put(
+        assignment_url,
+        json={"line_index": 0, "label": compared["lines"][0]["label"], "module_ids": [module_id]},
+    )
+    assert mapped.status_code == 200
+    assert mapped.json()["comparison"][0]["match"] == "manual"
+    assert mapped.json()["comparison"][0]["module_ids"] == [module_id]
+    overlap = client.put(
+        assignment_url,
+        json={"line_index": 1, "label": compared["lines"][1]["label"], "module_ids": [module_id]},
+    )
+    assert overlap.status_code == 409
+
+    ignored = client.put(
+        assignment_url,
+        json={"line_index": 1, "label": compared["lines"][1]["label"], "ignored": True},
+    )
+    assert ignored.status_code == 200
+    assert ignored.json()["comparison"][1]["match"] == "ignored"
+    assert ignored.json()["total_quote"] == 50000
+    assert ignored.json()["suggested_markup_percent"] == mapped.json()["suggested_markup_percent"]
+
+    reimported = client.post(url, files=upload)
+    assert reimported.status_code == 200
+    persisted = reimported.json()["comparison"]
+    assert persisted[0]["match"] == "manual" and persisted[0]["module_ids"] == [module_id]
+    assert persisted[1]["match"] == "ignored"
+
+
+def test_empty_quote_import_is_retrievable(client):
+    project_id = _create(client)
+    workbook = Workbook()
+    stream = io.BytesIO()
+    workbook.save(stream)
+    url = f"/api/projects/{project_id}/quote"
+    uploaded = client.post(
+        url,
+        files={
+            "file": (
+                "empty.xlsx",
+                stream.getvalue(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert uploaded.status_code == 200
+    assert uploaded.json()["lines"] == []
+    assert client.get(url).status_code == 200
+    assert client.get(url).json()["lines"] == []
+
+
+def test_quote_reimport_carryover_uses_unique_label_and_amount(client):
+    project_id = _create(client)
+    url = f"/api/projects/{project_id}/quote"
+
+    def workbook_upload(amounts):
+        workbook = Workbook()
+        for amount in amounts:
+            workbook.active.append(["Transport", amount])
+        stream = io.BytesIO()
+        workbook.save(stream)
+        return {
+            "file": (
+                "quote.xlsx",
+                stream.getvalue(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        }
+
+    first = client.post(url, files=workbook_upload([100, 500])).json()
+    ignored = client.put(
+        f"{url}/assignments",
+        json={"line_index": 0, "label": first["lines"][0]["label"], "ignored": True},
+    )
+    assert ignored.status_code == 200
+
+    imported = client.post(url, files=workbook_upload([500, 100]))
+    assert imported.status_code == 200
+    rows = imported.json()["comparison"]
+    assert rows[0]["quote_amount"] == 500 and rows[0]["match"] == "none"
+    assert rows[1]["quote_amount"] == 100 and rows[1]["match"] == "ignored"
+
+
+def test_stale_manual_module_assignment_falls_back_to_code_match():
+    from types import SimpleNamespace
+
+    from src.furniture.pricing import ModuleAmount
+    from src.furniture.quote import QuoteLine, compare_quote
+
+    model = SimpleNamespace(module=SimpleNamespace(module_id="M1", group_id="ZM01", status="ok"))
+    line = QuoteLine(label="ZM01 cabinet", codes=["ZM01"], amount=120, manual_module_ids=["deleted"])
+    result = compare_quote(
+        [line],
+        [model],
+        [ModuleAmount(module_id="M1", title="Cabinet", amount=100, markup=0, total_with_markup=100)],
+    )
+    assert result.comparison[0].match == "code"
+    assert result.comparison[0].module_ids == ["M1"]
+    assert line.manual_module_ids == []
+
+
 def test_users_cli_and_markup_suggestion(tmp_path, monkeypatch, capsys):
     import sys
     from types import SimpleNamespace
