@@ -113,6 +113,21 @@ model usage), `usage.json` (cumulative model usage), `pricing.yaml`,
 - `pages/` is a regenerable cache (hundreds of MB for multi-page packages): it can be excluded from backups and pruned; pages re-render on next view.
 - `history-archive-*` directories grow with every re-analysis; prune old ones if you do not need rollback that far.
 
+## Audit log integrity
+
+Each new `audit.jsonl` record includes `prev_hash` and `hash`. The hash is SHA-256 of the entry, including `prev_hash`, serialized as canonical UTF-8 JSON (sorted keys, no whitespace). The first chained record uses the SHA-256 of any legacy, unhashed prefix as its `prev_hash`; a log without a legacy prefix starts from 64 zeroes. The `audit_chain_since` line number and legacy-prefix hash are persisted in `project.json` when chaining begins, so removing hash fields from a chained log is detected. Legacy-only logs remain explicitly **unverified**; they are not represented as integrity-verified.
+
+Verify a project or every project under the projects root:
+
+```bash
+uv run python -m src.webapp.audit verify results/webapp/projects/<project-id>
+uv run python -m src.webapp.audit verify results/webapp/projects
+```
+
+The command exits `1` and reports the first broken line in each affected log. `/api/projects/{project_id}/activity` continues to return an `ActivityEntry[]`; `/api/projects/{project_id}/activity/integrity` returns `chain_status`, `chain_error`, and `head_hash`. The Activity page displays verified, unverified (legacy-only), or invalid status; malformed records are skipped in the activity table while causing an invalid integrity result. The raw log is downloadable from `/api/projects/{project_id}/audit.jsonl`.
+
+Hash chaining detects edits and removals within the recorded chain, but it cannot detect tail truncation (including deletion of the entire log): the remaining prefix still verifies. The checkpoint lives beside the log in `project.json`; **anyone able to rewrite both files can forge a verified chain**. The only defense against that attacker is an externally retained copy of the latest `head_hash` (or an exported audit checkpoint) outside the project directory. Compare that external head during audit/restore; keep it with separately protected backups.
+
 ## Logs
 
 The app logs to stdout/stderr only (standard `logging` + uvicorn access logs); there are no log files and no structured logging yet (see [Production readiness](production-readiness.md)). Under systemd, journald captures everything: `journalctl -u furniture-assistant -f`. Legacy pipeline runs can additionally be traced to Langfuse (`FA_TRACING_ENABLED`, `docker-compose.dev.yml`).

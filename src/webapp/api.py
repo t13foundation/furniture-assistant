@@ -38,6 +38,7 @@ from src.furniture.schema import CabinetKind, FurnitureModule, ModuleModel, Over
 from src.pipeline.orchestrator import DRAWING_EXTENSIONS
 from src.webapp import reports
 from src.webapp.analysis import module_state, rebuild, recheck_project, refine_stored_module, run_analysis
+from src.webapp.audit import audit_head_hash, verify_audit
 from src.webapp.auth import (
     COOKIE_NAME,
     SESSION_SECONDS,
@@ -188,6 +189,12 @@ class ReviewEntry(BaseModel):
     kind: CabinetKind
     status: str
     questions: list[Question]
+
+
+class ActivityIntegrityResponse(BaseModel):
+    chain_status: Literal["unverified", "verified", "invalid"]
+    chain_error: str | None
+    head_hash: str | None
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -693,12 +700,38 @@ async def get_project(request: Request, project_id: str) -> ProjectDetailRespons
     )
 
 
-@app.get("/api/projects/{project_id}/activity")
+@app.get("/api/projects/{project_id}/activity", response_model=list[ActivityEntry])
 def project_activity(request: Request, project_id: str) -> list[ActivityEntry]:
     store = _store(request)
     _require_project(store, project_id)
     with store.lock(project_id):
-        return store.list_activity(project_id)
+        snapshot, _ = store.audit_snapshot(project_id)
+    return store.list_activity_snapshot(snapshot)
+
+
+@app.get("/api/projects/{project_id}/activity/integrity", response_model=ActivityIntegrityResponse)
+def project_activity_integrity(request: Request, project_id: str) -> ActivityIntegrityResponse:
+    store = _store(request)
+    _require_project(store, project_id)
+    with store.lock(project_id):
+        snapshot, project = store.audit_snapshot(project_id)
+    valid, error = verify_audit(snapshot, project.audit_chain_since, project.audit_legacy_hash)
+    chain_status = "invalid" if not valid else "verified" if project.audit_chain_since is not None else "unverified"
+    return ActivityIntegrityResponse(
+        chain_status=chain_status,
+        chain_error=error,
+        head_hash=audit_head_hash(snapshot) if valid and chain_status == "verified" else None,
+    )
+
+
+@app.get("/api/projects/{project_id}/audit.jsonl")
+def download_audit(request: Request, project_id: str) -> FileResponse:
+    store = _store(request)
+    _require_project(store, project_id)
+    path = store.project_dir(project_id) / "audit.jsonl"
+    if not path.is_file():
+        raise HTTPException(404, "Audit log not found")
+    return FileResponse(path, media_type="application/x-ndjson", filename="audit.jsonl")
 
 
 @app.get("/api/projects/{project_id}/review", response_model=list[ReviewEntry])

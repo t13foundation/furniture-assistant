@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import os
 
 import pytest
@@ -321,11 +322,25 @@ def test_audit_history_restore_and_review(client, two_door_module):
     assert restored.status_code == 200
     assert restored.json()["module"]["title"] == original["title"]
     activity = client.get(f"/api/projects/{project_id}/activity").json()
+    integrity = client.get(f"/api/projects/{project_id}/activity/integrity").json()
     assert activity[0]["action"] == "restore"
     assert {entry["action"] for entry in activity} >= {"create_project", "editor_save", "restore"}
+    assert integrity["chain_status"] == "verified"
+    assert integrity["chain_error"] is None
+    assert integrity["head_hash"] is not None
+    exported = client.get(f"/api/projects/{project_id}/audit.jsonl")
+    assert exported.status_code == 200
+    assert exported.headers["content-type"].startswith("application/x-ndjson")
     review = client.get(f"/api/projects/{project_id}/review").json()
+    audit_lines = exported.text.splitlines()
+    audit_lines[-1] = audit_lines[-1].replace("restore", "tampered")
+    (api.app.state.store.project_dir(project_id) / "audit.jsonl").write_text("\n".join(audit_lines) + "\n")
+    integrity = client.get(f"/api/projects/{project_id}/activity/integrity").json()
+    assert integrity["chain_status"] == "invalid"
+    assert integrity["chain_error"] == f"line {len(audit_lines)}: hash mismatch"
     assert review[0]["group_id"] == two_door_module.group_id
     assert review[0]["kind"] == two_door_module.kind
+    assert client.get(f"/api/projects/{project_id}/activity").status_code == 200
 
 
 def test_project_pricing_markup_and_quote_comparison(client, two_door_module):
@@ -485,3 +500,163 @@ def test_valuation_per_cabinet_reconciles_with_the_marked_up_total(client, two_d
     assert sum(row.total_with_markup for row in valuation.per_module) == pytest.approx(
         valuation.totals["total_with_markup"], abs=0.02
     )
+
+
+def test_audit_chain_detects_tampering_removal_and_reordering(client):
+    from src.webapp.audit import verify_audit
+
+    project_id = _create(client)
+    store = api.app.state.store
+    for action in ("first", "second", "third"):
+        store.append_audit(project_id, action, "operator")
+    path = store.project_dir(project_id) / "audit.jsonl"
+    original = path.read_bytes()
+    assert verify_audit(path) == (True, None)
+
+    lines = original.splitlines(keepends=True)
+    changed = lines.copy()
+    changed[2] = changed[2].replace(b'"second"', b'"changed"')
+    path.write_bytes(b"".join(changed))
+    assert verify_audit(path) == (False, "line 3: hash mismatch")
+
+    path.write_bytes(lines[0] + lines[2] + lines[3])
+    assert verify_audit(path) == (False, "line 2: prev_hash mismatch")
+
+    path.write_bytes(b"".join(reversed(lines)))
+    assert verify_audit(path) == (False, "line 1: prev_hash mismatch")
+
+
+def test_audit_chain_downgrade_is_rejected_and_activity_reports_invalid(client):
+    from src.webapp.audit import verify_audit
+
+    project_id = _create(client)
+    store = api.app.state.store
+    store.append_audit(project_id, "first", "operator")
+    store.append_audit(project_id, "second", "operator")
+    path = store.project_dir(project_id) / "audit.jsonl"
+    entries = [json.loads(line) for line in path.read_text().splitlines()]
+    downgraded = [{key: value for key, value in entry.items() if key not in {"hash", "prev_hash"}} for entry in entries]
+    path.write_text("".join(json.dumps(entry) + "\n" for entry in downgraded))
+
+    assert verify_audit(path) == (False, "line 1: unhashed entry after chain start")
+    response = client.get(f"/api/projects/{project_id}/activity")
+    integrity = client.get(f"/api/projects/{project_id}/activity/integrity")
+    assert response.status_code == 200 and isinstance(response.json(), list)
+    assert integrity.status_code == 200
+    assert integrity.json()["chain_status"] == "invalid"
+
+
+def test_malformed_audit_line_is_reported_without_failing_activity(client):
+    project_id = _create(client)
+    store = api.app.state.store
+    store.append_audit(project_id, "first", "operator")
+    path = store.project_dir(project_id) / "audit.jsonl"
+    path.write_bytes(path.read_bytes() + b"{not-json}\n")
+
+    response = client.get(f"/api/projects/{project_id}/activity")
+    integrity = client.get(f"/api/projects/{project_id}/activity/integrity")
+    assert response.status_code == 200
+    assert [entry["action"] for entry in response.json()] == ["first", "create_project"]
+    assert integrity.status_code == 200
+    assert integrity.json()["chain_status"] == "invalid"
+    assert integrity.json()["chain_error"] == "line 3: invalid JSON"
+
+
+def test_legacy_activity_is_explicitly_unverified(client):
+    project_id = _create(client)
+    directory = api.app.state.store.project_dir(project_id)
+    path = directory / "audit.jsonl"
+    path.write_text('{"at":"2026-01-01T00:00:00","user":"system","action":"legacy","module_id":null,"detail":null}\n')
+    metadata_path = directory / "project.json"
+    metadata = json.loads(metadata_path.read_text())
+    metadata.pop("audit_chain_since")
+    metadata.pop("audit_legacy_hash")
+    metadata_path.write_text(json.dumps(metadata))
+
+    integrity = client.get(f"/api/projects/{project_id}/activity/integrity")
+    assert integrity.status_code == 200
+    assert integrity.json()["chain_status"] == "unverified"
+
+
+def test_append_terminates_valid_final_record_without_newline(client):
+    from src.webapp.audit import verify_audit
+
+    project_id = _create(client)
+    store = api.app.state.store
+    path = store.project_dir(project_id) / "audit.jsonl"
+    original = path.read_bytes().rstrip(b"\n")
+    path.write_bytes(original)
+
+    store.append_audit(project_id, "after_unterminated_record", "operator")
+
+    updated = path.read_bytes()
+    assert updated.startswith(original + b"\n")
+    assert verify_audit(path) == (True, None)
+    assert json.loads(updated.splitlines()[-1])["action"] == "after_unterminated_record"
+
+
+def test_partial_final_record_is_invalid_and_append_refuses_to_extend(client):
+    project_id = _create(client)
+    store = api.app.state.store
+    path = store.project_dir(project_id) / "audit.jsonl"
+    path.write_bytes(path.read_bytes() + b'{"partial":')
+    original = path.read_bytes()
+
+    with pytest.raises(ValueError, match="final line is not valid JSON"):
+        store.append_audit(project_id, "must_not_append", "operator")
+
+    assert path.read_bytes() == original
+    integrity = client.get(f"/api/projects/{project_id}/activity/integrity")
+    assert integrity.status_code == 200
+    assert integrity.json()["chain_status"] == "invalid"
+    assert integrity.json()["chain_error"] == "line 2: invalid JSON"
+
+
+def test_activity_integrity_repairs_checkpoint_after_append_crash(tmp_path, monkeypatch):
+    from src.webapp import store as store_module
+    from src.webapp.audit import verify_audit
+    from src.webapp.store import ProjectStore
+
+    store = ProjectStore(tmp_path)
+    project = store.create_project("Crash recovery", [("cabinet.png", b"png")])
+    original_write_atomic = store_module._write_atomic
+
+    def fail_checkpoint(path, text):
+        if path.name == "project.json":
+            raise OSError("simulated crash between audit append and checkpoint")
+        original_write_atomic(path, text)
+
+    monkeypatch.setattr(store_module, "_write_atomic", fail_checkpoint)
+    with pytest.raises(OSError, match="simulated crash"):
+        store.append_audit(project.id, "first", "operator")
+
+    project_path = store.project_dir(project.id) / "project.json"
+    assert json.loads(project_path.read_text())["audit_chain_since"] is None
+    audit_path = store.project_dir(project.id) / "audit.jsonl"
+    assert audit_path.exists()
+
+    monkeypatch.setattr(store_module, "_write_atomic", original_write_atomic)
+    assert verify_audit(audit_path) == (True, None)
+    snapshot, repaired = store.audit_snapshot(project.id)
+    assert repaired.audit_chain_since == 1
+    assert verify_audit(snapshot, repaired.audit_chain_since, repaired.audit_legacy_hash) == (True, None)
+
+
+def test_audit_chain_accepts_legacy_prefix_and_cli_verify(tmp_path, monkeypatch, capsys):
+    import sys
+
+    from src.webapp.audit import main, verify_audit
+    from src.webapp.store import ProjectStore
+
+    store = ProjectStore(tmp_path)
+    project = store.create_project("Audit test", [("cabinet.png", b"png")])
+    audit_path = store.project_dir(project.id) / "audit.jsonl"
+    legacy = b'{"at":"2026-01-01T00:00:00","user":"system","action":"legacy","module_id":null,"detail":null}\n'
+    audit_path.write_bytes(legacy)
+    assert verify_audit(audit_path) == (True, None)
+    store.append_audit(project.id, "after_legacy", "operator")
+    assert verify_audit(audit_path) == (True, None)
+
+    monkeypatch.setattr(sys, "argv", ["audit", "verify", str(store.project_dir(project.id))])
+    assert main() == 0
+    assert "valid" in capsys.readouterr().out
