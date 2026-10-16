@@ -1,4 +1,4 @@
-import { lazy, useEffect, useState } from 'react'
+import { lazy, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, ApiError } from './api'
 import { ProjectSidebar, WorkspaceSidebar } from './ProjectView'
@@ -184,6 +184,12 @@ export function PricingSettings() {
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
   const [quoteFile, setQuoteFile] = useState<File | null>(null)
+  const currentProjectId = useRef(id)
+  useLayoutEffect(() => {
+    currentProjectId.current = id
+  }, [id])
+  const assignmentSaving = useRef(false)
+  const [savingAssignment, setSavingAssignment] = useState(false)
   useEffect(() => {
     const endpoint = id ? `/api/projects/${encodeURIComponent(id)}/pricing` : '/api/pricing'
     void api<Pricing | ProjectPricing>(endpoint)
@@ -278,6 +284,33 @@ export function PricingSettings() {
     } catch (e) {
       setQuoteError(e instanceof Error ? e.message : 'Could not compare quote')
     }
+  }
+  const saveQuoteAssignment = async (
+    lineIndex: number,
+    label: string,
+    moduleIds: string[],
+    ignored: boolean,
+  ) => {
+    if (!id || assignmentSaving.current) return
+    assignmentSaving.current = true
+    setSavingAssignment(true)
+    setQuoteError('')
+    try {
+      const projectId = id
+      const value = await api<QuoteComparison>(`/api/projects/${encodeURIComponent(projectId)}/quote/assignments`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ line_index: lineIndex, label, module_ids: moduleIds, ignored }),
+      })
+      if (currentProjectId.current === projectId) setQuoteState({ projectId, value })
+    } catch (e) {
+      if (currentProjectId.current === id)
+        setQuoteError(e instanceof Error ? e.message : 'Could not save quote assignment')
+    } finally {
+      assignmentSaving.current = false
+      setSavingAssignment(false)
+    }
+
   }
   const revertPricing = async () => {
     if (!id) return
@@ -501,19 +534,75 @@ export function PricingSettings() {
                   Quote total {quote.total_quote.toFixed(2)} · App total {quote.total_app.toFixed(2)} ·
                   Suggested markup {quote.suggested_markup_percent.toFixed(1)}% ({quote.suggestion_basis})
                 </p>
-                <DataTable
-                  headers={['Code', 'Quote item', 'Quote', 'App', 'Ratio', 'Modules']}
-                  rows={quote.comparison.map((row) => [
-                    row.codes.join(', ') || '—',
-                    row.label,
-                    row.quote_amount.toFixed(2),
-                    row.app_amount?.toFixed(2) ?? '—',
-                    row.ratio == null ? '—' : `×${row.ratio.toFixed(2)}`,
-                    row.module_ids.length
-                      ? `${row.module_ids.join(', ')}${row.complete ? '' : ' (incomplete or partly unpriced)'}`
-                      : 'no matching module',
-                  ])}
-                />
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        {['Code', 'Quote item', 'Quote', 'App', 'Ratio', 'Modules', 'Assign modules', 'Ignore'].map(
+                          (header) => <th key={header}>{header}</th>,
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {quote.comparison.map((row) => {
+                        const ignored = row.match === 'ignored'
+                        const selected = row.match === 'manual' ? row.module_ids : []
+                        return (
+                          <tr key={row.line_index}>
+                            <td>{row.codes.join(', ') || '—'}</td>
+                            <td>{row.label}</td>
+                            <td>{row.quote_amount.toFixed(2)}</td>
+                            <td>{row.app_amount?.toFixed(2) ?? '—'}</td>
+                            <td>{row.ratio == null ? '—' : `×${row.ratio.toFixed(2)}`}</td>
+                            <td>
+                              {row.module_ids.length
+                                ? `${row.module_ids.join(', ')}${row.complete ? '' : ' (incomplete or partly unpriced)'}`
+                                : row.match === 'ignored' ? 'ignored' : 'no matching module'}
+                            </td>
+                            <td>
+                              <select
+                                aria-label={`Modules for ${row.label}`}
+                                multiple
+                                value={selected}
+                                disabled={ignored || savingAssignment || !detail?.modules.length}
+                                onChange={(event) =>
+                                  void saveQuoteAssignment(
+                                    row.line_index,
+                                    row.label,
+                                    Array.from(event.currentTarget.selectedOptions, (option) => option.value),
+                                    false,
+                                  )
+                                }
+                              >
+                                {(detail?.modules ?? []).map((module) => (
+                                  <option key={module.module_id} value={module.module_id}>
+                                    {module.group_id} · {module.title || module.module_id}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td>
+                              <input
+                                type="checkbox"
+                                aria-label={`Ignore ${row.label}`}
+                                checked={ignored}
+                                disabled={savingAssignment}
+                                onChange={(event) =>
+                                  void saveQuoteAssignment(
+                                    row.line_index,
+                                    row.label,
+                                    event.currentTarget.checked ? [] : selected,
+                                    event.currentTarget.checked,
+                                  )
+                                }
+                              />
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
                 <button
                   className="button secondary"
                   onClick={() => setPricing({ ...pricing, markup_percent: quote.suggested_markup_percent })}

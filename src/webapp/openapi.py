@@ -15,7 +15,7 @@ from src.webapp.api import app
 
 # Nested inside request bodies and built field-by-field by the client (only the fields it sets is sent):
 # their fields stay optional in the generated TS.
-CLIENT_BUILT = {"Override", "AnswersBody", "LoginBody"}
+CLIENT_BUILT = {"Override", "AnswersBody", "LoginBody", "QuoteAssignment"}
 # Request bodies the client round-trips whole (loaded, edited, sent back): every field is present.
 ROUND_TRIPPED = {"FurnitureModule", "Pricing", "ProjectNameBody"}
 

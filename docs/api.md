@@ -98,8 +98,9 @@ Valuation semantics and unpriced rules: [Pricing and quotes](pricing.md).
 |---|---|---|---|---|
 | POST | `/api/projects/{project_id}/quote` | multipart `file` (`.xlsx`) | `QuoteComparison` | cookie |
 | GET | `/api/projects/{project_id}/quote` | — | `QuoteComparison`; `404` until one is uploaded | cookie |
+| PUT | `/api/projects/{project_id}/quote/assignments` | `QuoteAssignment` (`line_index`, `label`, `module_ids[]`, `ignored`) | recomputed `QuoteComparison` | cookie |
 
-The upload is stored as `quote.xlsx` (original) and `quote.json` (parsed lines) in the project directory and re-compared on every GET. Accepted row format and the suggested-markup calculation: [Pricing and quotes](pricing.md#client-quote-import).
+The upload is stored as `quote.xlsx` (original) and `quote.json` (parsed lines and assignments) in the project directory and re-compared on every GET. The assignment PUT also records an audit event. Each comparison line reports `match: code|manual|ignored|none`; manual module IDs replace automatic code matching, while ignored lines are excluded from totals and markup. Accepted row format and the suggested-markup calculation: [Pricing and quotes](pricing.md#client-quote-import).
 
 ## Exports
 
