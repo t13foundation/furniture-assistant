@@ -56,6 +56,85 @@ def _create(client: TestClient) -> str:
     return response.json()["id"]
 
 
+def test_request_ids_and_json_request_log(client, monkeypatch):
+    import json
+    import logging
+    from io import StringIO
+
+    from src.webapp import observability
+
+    monkeypatch.setenv("FA_LOG_FORMAT", "json")
+    observability.configure_logging()
+    stream = StringIO()
+    handler = observability._logging_handler
+    assert isinstance(handler, logging.StreamHandler)
+    previous_stream = handler.setStream(stream)
+    try:
+        echoed = client.get("/api/health", headers={"X-Request-ID": "request-123"})
+        assert echoed.headers["X-Request-ID"] == "request-123"
+
+        generated = client.get("/api/health", headers={"X-Request-ID": "invalid id"})
+        request_id = generated.headers["X-Request-ID"]
+        assert request_id and request_id != "invalid id"
+        assert len(request_id) == 32
+
+        created = client.post(
+            "/api/projects",
+            files=[("files", ("cabinet.png", b"png", "image/png"))],
+            headers={"X-Request-ID": "create-project-request"},
+        )
+        assert created.status_code == 201
+        project_id = created.json()["id"]
+        project_response = client.get(f"/api/projects/{project_id}", headers={"X-Request-ID": "project-request"})
+        assert project_response.status_code == 200
+    finally:
+        handler.setStream(previous_stream)
+
+    lines = [json.loads(line) for line in stream.getvalue().splitlines()]
+    assert any(line["request_id"] == "request-123" for line in lines)
+    assert any(line["request_id"] == request_id for line in lines)
+    assert any(line["request_id"] == "create-project-request" and line["project_id"] == project_id for line in lines)
+    assert any(line["request_id"] == "project-request" and line["project_id"] == project_id for line in lines)
+    assert all("ts" in line and "level" in line and "logger" in line and "message" in line for line in lines)
+
+
+def test_newline_upload_filename_is_logged_as_one_line(client, monkeypatch, caplog):
+    import time
+
+    from src.webapp import analysis
+    from src.webapp.store import JobItem
+
+    caplog.set_level("INFO")
+    monkeypatch.setattr(analysis, "plan_items", lambda *_: [JobItem(file_index=0, page_index=0)])
+
+    async def model_available(_request):
+        return None
+
+    monkeypatch.setattr(api, "_probe_model_server", model_available)
+
+    def fail_extract(*_args):
+        raise RuntimeError("stop after filename is logged")
+
+    monkeypatch.setattr(analysis, "extract_marks", fail_extract)
+    project_id = _create(client)
+    store = api.app.state.store
+    project = store.load_project(project_id)
+    project.files[0].name = "cabinet\nforged.log.png"
+    (store.project_dir(project_id) / "project.json").write_text(project.model_dump_json())
+    assert client.post(f"/api/projects/{project_id}/analyze").status_code == 202
+
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        job = client.get(f"/api/projects/{project_id}").json()["job"]
+        if job["items"] and job["items"][0]["status"] == "error":
+            break
+        time.sleep(0.01)
+    assert job["items"][0]["status"] == "error"
+    page_lines = [line for line in caplog.text.splitlines() if "Analysis page started" in line]
+    assert len(page_lines) == 1
+    assert r"\n" in page_lines[0]
+
+
 def test_auth_disabled_and_login_protects_api(tmp_path, monkeypatch):
     monkeypatch.setenv("FA_OUTPUT_DIR", str(tmp_path / "output"))
     monkeypatch.setenv("FA_USERS_FILE", str(tmp_path / "users.yaml"))

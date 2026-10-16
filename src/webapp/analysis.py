@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from pathlib import Path
 
 import pypdfium2  # type: ignore[import-untyped]
@@ -32,6 +33,7 @@ from src.furniture.resolve import (
 from src.furniture.rules import ConstructionRules
 from src.furniture.schema import DimensionMark, FurnitureModule, ModuleDraft, ModuleModel
 from src.schema.enums import DrawingType
+from src.webapp.observability import project_id_var
 from src.webapp.store import Job, JobItem, JobSupersededError, ProjectStore, UsageTotals, now_iso
 
 logger = logging.getLogger(__name__)
@@ -187,6 +189,9 @@ async def refine_and_save(
 
     Model usage is added to the project total and, when given, to ``job`` (the analysis or refine job).
     """
+    project_id_var.set(project_id)
+    started = time.perf_counter()
+    logger.info("Refine started module_id=%s", module_id)
     model = await asyncio.to_thread(store.load_module, project_id, module_id)
     new_draft, error = None, None
     try:
@@ -203,7 +208,7 @@ async def refine_and_save(
             ),
         )
     except Exception as exc:
-        logger.exception("Refining %s/%s failed", project_id, module_id)
+        logger.exception("Refining module_id=%s failed", module_id)
         error = f"{type(exc).__name__}: {exc}"
 
     def save() -> None:
@@ -217,6 +222,12 @@ async def refine_and_save(
         store.append_audit(project_id, "refine_finish", "system", module_id, error and f"Error: {error}")
 
     await _fenced_async(store, project_id, claim_token, save)
+    logger.info(
+        "Refine finished module_id=%s status=%s duration_ms=%.1f",
+        module_id,
+        "error" if error else "done",
+        (time.perf_counter() - started) * 1000,
+    )
 
 
 def recheck_project(
@@ -245,6 +256,9 @@ async def refine_stored_module(
     claim_token: str,
 ) -> None:
     """Background job behind the "Ask the model again" button."""
+    project_id_var.set(project_id)
+    started = time.perf_counter()
+    logger.info("Refine task started module_id=%s", module_id)
     try:
         model = await asyncio.to_thread(store.load_module, project_id, module_id)
         agent = create_refine_agent(config.models.orchestrator, config.api.base_url, config.api.api_key)
@@ -253,7 +267,7 @@ async def refine_stored_module(
             store.page_png, project_id, file_index, model.module.page_index, config.document
         )
     except Exception as exc:
-        logger.exception("Refining %s/%s could not start", project_id, module_id)
+        logger.exception("Refine task could not start module_id=%s", module_id)
         error_message = f"{type(exc).__name__}: {exc}"
 
         def mark_refine_error() -> None:
@@ -267,15 +281,24 @@ async def refine_stored_module(
             store.append_audit(project_id, "refine_finish", "system", module_id, f"Error: {error_message}")
 
         await _fenced_async(store, project_id, claim_token, mark_refine_error)
+        logger.info(
+            "Refine task finished module_id=%s status=error duration_ms=%.1f",
+            module_id,
+            (time.perf_counter() - started) * 1000,
+        )
         return
     refine_job = await asyncio.to_thread(store.load_job, project_id)
     await refine_and_save(store, project_id, module_id, agent, png_path, rules, claim_token, refine_job)
     await _fenced_async(store, project_id, claim_token, lambda: recheck_project(store, project_id, rules, claim_token))
+    logger.info("Refine task finished module_id=%s duration_ms=%.1f", module_id, (time.perf_counter() - started) * 1000)
 
 
 async def run_analysis(
     project_id: str, store: ProjectStore, config: AppConfig, rules: ConstructionRules, claim_token: str
 ) -> None:
+    project_id_var.set(project_id)
+    started = time.perf_counter()
+    logger.info("Analysis started")
     job = await asyncio.to_thread(store.load_job, project_id)
     if job is None:
         raise JobSupersededError(f"Job claim for project {project_id} is missing")
@@ -294,7 +317,7 @@ async def run_analysis(
         agent = create_interpretation_agent(*model_args)
         refine_agent = create_refine_agent(*model_args)
     except Exception as exc:
-        logger.exception("Analysis of %s could not start", project_id)
+        logger.exception("Analysis could not start")
         job.status, job.error, job.finished_at = "error", str(exc), now_iso()
         error_message = str(exc)
 
@@ -303,6 +326,7 @@ async def run_analysis(
             store.append_audit(project_id, "analyze_finish", "system", detail=f"Error: {error_message}")
 
         await _fenced_async(store, project_id, claim_token, save_start_error)
+        logger.info("Analysis finished status=error duration_ms=%.1f", (time.perf_counter() - started) * 1000)
         return
 
     project = await asyncio.to_thread(store.load_project, project_id)
@@ -310,10 +334,12 @@ async def run_analysis(
     for item in job.items:
         if item.status != "pending":
             continue
+        item_started = time.perf_counter()
         item.status = "running"
         await _fenced_async(store, project_id, claim_token, lambda: store.save_job(project_id, job, claim_token))
         file = project.files[item.file_index]
         path = store.upload_path(project_id, item.file_index)
+        logger.info("Analysis page started file=%r page_index=%d", file.name, item.page_index)
         try:
             marks, runs = await asyncio.to_thread(extract_marks, str(path), item.page_index)
             chains = build_chains(marks)
@@ -364,7 +390,14 @@ async def run_analysis(
                 item.module_ids.append(module.module_id)
             item.status = "done"
         except _RunAbortedError as exc:
-            logger.error("Analysis of %s aborted: %s", project_id, exc)
+            logger.error(
+                "Analysis page failed file=%r page_index=%d error=%s duration_ms=%.1f",
+                file.name,
+                item.page_index,
+                exc,
+                (time.perf_counter() - item_started) * 1000,
+            )
+            logger.error("Analysis aborted: %s", exc)
             item.status, item.error = "error", str(exc)
             job.status, job.error, job.finished_at = "error", str(exc), now_iso()
             error_message = str(exc)
@@ -374,12 +407,25 @@ async def run_analysis(
                 store.append_audit(project_id, "analyze_finish", "system", detail=f"Error: {error_message}")
 
             await _fenced_async(store, project_id, claim_token, save_aborted)
+            logger.info("Analysis finished status=error duration_ms=%.1f", (time.perf_counter() - started) * 1000)
             return
         except JobSupersededError:
             raise
         except Exception as exc:
-            logger.exception("Page %s/%s of %s failed", file.name, item.page_index, project_id)
+            logger.exception(
+                "Analysis page failed file=%r page_index=%d duration_ms=%.1f",
+                file.name,
+                item.page_index,
+                (time.perf_counter() - item_started) * 1000,
+            )
             item.status, item.error = "error", f"{type(exc).__name__}: {exc}"
+        else:
+            logger.info(
+                "Analysis page done file=%r page_index=%d duration_ms=%.1f",
+                file.name,
+                item.page_index,
+                (time.perf_counter() - item_started) * 1000,
+            )
         await _fenced_async(store, project_id, claim_token, lambda: store.save_job(project_id, job, claim_token))
 
     def finish() -> None:
@@ -389,6 +435,7 @@ async def run_analysis(
         store.append_audit(project_id, "analyze_finish", "system")
 
     await _fenced_async(store, project_id, claim_token, finish)
+    logger.info("Analysis finished status=done duration_ms=%.1f", (time.perf_counter() - started) * 1000)
 
 
 class _RunAbortedError(RuntimeError):

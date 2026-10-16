@@ -152,7 +152,9 @@ Hash chaining detects edits and removals within the recorded chain, but it canno
 
 ## Logs
 
-The app logs to stdout/stderr only (standard `logging` + uvicorn access logs); there are no log files and no structured logging yet (see [Production readiness](production-readiness.md)). Under systemd, journald captures everything: `journalctl -u furniture-assistant -f`. Legacy pipeline runs can additionally be traced to Langfuse (`FA_TRACING_ENABLED`, `docker-compose.dev.yml`).
+The app writes application logs to stdout/stderr; under systemd, journald captures them (`journalctl -u furniture-assistant -f`). `FA_LOG_FORMAT=text` is the default; set it to `json` for one JSON object per application log line. JSON entries include timestamp, level, logger, message, request ID, project ID when available, and exception details. `FA_LOG_LEVEL` sets the application log threshold (for example `INFO` or `DEBUG`). Uvicorn loggers retain their own handlers and formatting.
+
+Every HTTP response includes `X-Request-ID`. A valid incoming `X-Request-ID` (1–128 ASCII letters, digits, `.`, `_` or `-`) is echoed; otherwise the app generates one. The ID is included in application logs and propagated to analysis/refine task logs. Legacy pipeline runs also use `FA_TRACING_ENABLED`; the web app instruments PydanticAI agents using the selected tracing backend when enabled. Keep `FA_TRACING_INCLUDE_BINARY_CONTENT=false` unless drawing images should be attached to trace events.
 
 ## Production checklist
 
