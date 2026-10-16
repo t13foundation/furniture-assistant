@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from './api'
+import { isViewer, useAuth } from './auth'
 import { ProjectSidebar } from './ProjectView'
 import type {
   ActivityEntry,
@@ -15,6 +16,8 @@ import type {
 
 export function ProjectReviewPage() {
   const { id = '' } = useParams()
+  const { auth } = useAuth()
+  const viewer = isViewer(auth)
   const [detail, setDetail] = useState<ProjectDetail | null>(null)
   const [items, setItems] = useState<ProjectReviewItem[]>([])
   const [reason, setReason] = useState('all')
@@ -170,7 +173,9 @@ export function ProjectReviewPage() {
                       question={question}
                     />
                     <div className="header-actions">
-                      <InlineConfirm question={question} onConfirm={() => void confirm(item, question)} />
+                      {!viewer && (
+                        <InlineConfirm question={question} onConfirm={() => void confirm(item, question)} />
+                      )}
                       <Link
                         className="button secondary"
                         to={`/p/${encodeURIComponent(id)}/m/${encodeURIComponent(item.module_id)}?tab=review`}
@@ -372,10 +377,12 @@ export function HistoryPanel({
   projectId,
   moduleId,
   onRestore,
+  canRestore,
 }: {
   projectId: string
   moduleId: string
   onRestore: (model: ModuleModel) => void
+  canRestore: boolean
 }) {
   const [versions, setVersions] = useState<ModuleVersion[]>([])
   const [error, setError] = useState('')
@@ -437,13 +444,15 @@ export function HistoryPanel({
                 <td>{version.action}</td>
                 <td>{version.summary}</td>
                 <td>
-                  <button
-                    className="button secondary"
-                    disabled={busy != null}
-                    onClick={() => void restore(version.version)}
-                  >
-                    {busy === version.version ? 'Restoring…' : 'Restore'}
-                  </button>
+                  {canRestore && (
+                    <button
+                      className="button secondary"
+                      disabled={busy != null}
+                      onClick={() => void restore(version.version)}
+                    >
+                      {busy === version.version ? 'Restoring…' : 'Restore'}
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}

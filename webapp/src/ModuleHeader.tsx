@@ -11,6 +11,7 @@ export default function ModuleHeader({
   exportGltf,
   exportPath,
   onEdit,
+  canEdit,
 }: {
   module: FurnitureModule
   model: ModuleModel
@@ -20,6 +21,7 @@ export default function ModuleHeader({
   exportGltf: () => void
   exportPath: (format: string) => string
   onEdit: () => void
+  canEdit: boolean
 }) {
   return (
     <>
@@ -36,50 +38,52 @@ export default function ModuleHeader({
             <span className="module-identity-chip">{module.kind.replaceAll('_', ' ')}</span>
             <span className="module-identity-chip">{module.group_id || module.module_id}</span>
           </div>
-          <div className="module-meta-controls">
-            <label>
-              Cabinet kind
-              <select
-                aria-label="Cabinet kind"
-                value={module.kind}
-                onChange={(event) =>
-                  void submitAnswers([{ target: 'kind', kind: event.target.value as CabinetKind }])
-                }
-              >
-                {(
-                  [
-                    'cabinet',
-                    'wardrobe',
-                    'kitchen',
-                    'shelving',
-                    'bench',
-                    'reception_desk',
-                    'wall_cladding',
-                    'other',
-                  ] as CabinetKind[]
-                ).map((kind) => (
-                  <option key={kind} value={kind}>
-                    {kind.replaceAll('_', ' ')}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Cabinet group
-              <input
-                aria-label="Cabinet group code"
-                defaultValue={module.group_id}
-                key={`${module.module_id}:${module.group_id}`}
-                onBlur={(event) => {
-                  const group = event.currentTarget.value.trim()
-                  if (group !== module.group_id) void submitAnswers([{ target: 'group', group_id: group }])
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') event.currentTarget.blur()
-                }}
-              />
-            </label>
-          </div>
+          {canEdit && (
+            <div className="module-meta-controls">
+              <label>
+                Cabinet kind
+                <select
+                  aria-label="Cabinet kind"
+                  value={module.kind}
+                  onChange={(event) =>
+                    void submitAnswers([{ target: 'kind', kind: event.target.value as CabinetKind }])
+                  }
+                >
+                  {(
+                    [
+                      'cabinet',
+                      'wardrobe',
+                      'kitchen',
+                      'shelving',
+                      'bench',
+                      'reception_desk',
+                      'wall_cladding',
+                      'other',
+                    ] as CabinetKind[]
+                  ).map((kind) => (
+                    <option key={kind} value={kind}>
+                      {kind.replaceAll('_', ' ')}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Cabinet group
+                <input
+                  aria-label="Cabinet group code"
+                  defaultValue={module.group_id}
+                  key={`${module.module_id}:${module.group_id}`}
+                  onBlur={(event) => {
+                    const group = event.currentTarget.value.trim()
+                    if (group !== module.group_id) void submitAnswers([{ target: 'group', group_id: group }])
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') event.currentTarget.blur()
+                  }}
+                />
+              </label>
+            </div>
+          )}
         </div>
         <div className="header-actions">
           <button className="button secondary" onClick={exportGltf}>
@@ -90,9 +94,11 @@ export default function ModuleHeader({
               {['CSV', 'XLSX', 'SVG', 'DXF'][index]}
             </a>
           ))}
-          <button className="button primary" onClick={onEdit}>
-            Edit
-          </button>
+          {canEdit && (
+            <button className="button primary" onClick={onEdit}>
+              Edit
+            </button>
+          )}
         </div>
       </header>
       <div className="tab-bar module-tabs">

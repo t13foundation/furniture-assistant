@@ -30,13 +30,14 @@ Two supported options; both are selected purely by configuration:
 
 The web app only talks to the orchestrator model; `FA_VISION_MODEL` / `FA_VISION_API_BASE` affect the legacy pipeline (`make run`, `make run-project`). `GET /api/health` reports the configured `model_base_url` so a probe can verify which server the app was started against.
 
-## Authentication
+## Authentication and roles
 
 Auth is optional and off by default: it is enabled iff `FA_USERS_FILE` (default `config/users.yaml`) exists and lists at least one user. Manage users with the CLI (`src/webapp/users.py`):
 
 ```bash
-uv run python -m src.webapp.users add alice      # prompts for the password (--password also works)
-uv run python -m src.webapp.users list
+uv run python -m src.webapp.users add alice --role admin   # prompts for the password (--password also works)
+uv run python -m src.webapp.users set-role alice editor
+uv run python -m src.webapp.users list                     # username and role
 uv run python -m src.webapp.users remove alice
 ```
 

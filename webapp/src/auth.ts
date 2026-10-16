@@ -8,3 +8,7 @@ export function useAuth() {
   if (!context) throw new Error('useAuth must be used within App')
   return context
 }
+
+export function isViewer(auth: AuthState) {
+  return auth.auth_enabled && auth.role === 'viewer'
+}

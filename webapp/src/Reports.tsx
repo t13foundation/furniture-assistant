@@ -1,6 +1,7 @@
 import { lazy, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, ApiError } from './api'
+import { isViewer, useAuth } from './auth'
 import { ProjectSidebar, WorkspaceSidebar } from './ProjectView'
 import { materialKinds } from './types'
 import type {
@@ -173,7 +174,10 @@ export default function ProjectReport({ page }: { page: Exclude<Page, 'pricing'>
 /** Workspace-wide pricing; inside a project (``/p/:id/pricing``) it keeps that project's sidebar. */
 export function PricingSettings() {
   const { id } = useParams()
+  const { auth } = useAuth()
+  const viewer = isViewer(auth)
   const [detail, setDetail] = useState<{ projectId: string; value: ProjectDetail } | null>(null)
+  const canSave = !viewer && (!auth.auth_enabled || id !== undefined || auth.role === 'admin')
   const [pricing, setPricing] = useState<Pricing | null>(null)
   const [inherited, setInherited] = useState(false)
   // Tagged with its project so another project's comparison is never shown while the next one loads.
@@ -348,7 +352,7 @@ export function PricingSettings() {
         {id && !inherited && (
           <p className="notice">
             Customized pricing for this project.{' '}
-            <button className="button secondary" onClick={() => void revertPricing()}>
+            <button className="button secondary" disabled={viewer} onClick={() => void revertPricing()}>
               Revert to workspace
             </button>
           </p>
@@ -358,6 +362,7 @@ export function PricingSettings() {
             <label>
               Markup percent
               <input
+                disabled={!canSave}
                 type="number"
                 min="0"
                 step="0.1"
@@ -371,6 +376,7 @@ export function PricingSettings() {
           <label>
             Currency
             <input
+              disabled={!canSave}
               value={pricing.currency}
               onChange={(event) => setPricing({ ...pricing, currency: event.target.value })}
             />
@@ -381,6 +387,7 @@ export function PricingSettings() {
               <label>
                 Match
                 <input
+                  disabled={!canSave}
                   value={row.match}
                   onChange={(event) => updateBoard(index, { match: event.target.value })}
                 />
@@ -388,6 +395,7 @@ export function PricingSettings() {
               <label>
                 Material kind
                 <select
+                  disabled={!canSave}
                   value={row.kind ?? ''}
                   onChange={(event) =>
                     updateBoard(index, {
@@ -404,6 +412,7 @@ export function PricingSettings() {
               <label>
                 Thickness mm
                 <input
+                  disabled={!canSave}
                   type="number"
                   value={row.thickness_mm ?? ''}
                   onChange={(event) =>
@@ -416,6 +425,7 @@ export function PricingSettings() {
               <label>
                 Price / m²
                 <input
+                  disabled={!canSave}
                   type="number"
                   min="0"
                   step="0.01"
@@ -425,6 +435,7 @@ export function PricingSettings() {
               </label>
               <button
                 className="button secondary"
+                disabled={!canSave}
                 onClick={() =>
                   setPricing({ ...pricing, boards: pricing.boards.filter((_, i) => i !== index) })
                 }
@@ -435,6 +446,7 @@ export function PricingSettings() {
           ))}
           <button
             className="button secondary"
+            disabled={!canSave}
             onClick={() =>
               setPricing({
                 ...pricing,
@@ -450,6 +462,7 @@ export function PricingSettings() {
           <label>
             Price per metre
             <input
+              disabled={!canSave}
               type="number"
               min="0"
               step="0.01"
@@ -469,6 +482,7 @@ export function PricingSettings() {
             <label className="inline-field" key={category}>
               {category}
               <input
+                disabled={!canSave}
                 type="number"
                 min="0"
                 step="0.01"
@@ -492,6 +506,7 @@ export function PricingSettings() {
           <label>
             Rate per hour
             <input
+              disabled={!canSave}
               type="number"
               min="0"
               step="0.01"
@@ -507,21 +522,33 @@ export function PricingSettings() {
         </section>
         {error && <p className="error-message">{error}</p>}
         {saved && <p className="notice">Pricing saved.</p>}
-        <button className="button primary" onClick={() => void save()}>
-          Save pricing
-        </button>
+        {canSave && (
+          <button className="button primary" onClick={() => void save()}>
+            Save pricing
+          </button>
+        )}
+        {!canSave && (
+          <p className="notice">
+            {viewer ? 'Read-only pricing access.' : 'Editors cannot save workspace pricing.'}
+          </p>
+        )}
         {id && (
           <section className="report-card">
             <h2>Compare with client quote</h2>
             <label>
               Quote workbook (.xlsx)
               <input
+                disabled={viewer}
                 type="file"
                 accept=".xlsx"
                 onChange={(event) => setQuoteFile(event.target.files?.[0] ?? null)}
               />
             </label>
-            <button className="button secondary" disabled={!quoteFile} onClick={() => void uploadQuote()}>
+            <button
+              className="button secondary"
+              disabled={!quoteFile || viewer}
+              onClick={() => void uploadQuote()}
+            >
               Compare quote
             </button>
             {quoteError && (
@@ -576,7 +603,9 @@ export function PricingSettings() {
                                 aria-label={`Modules for ${row.label}`}
                                 multiple
                                 value={selected}
-                                disabled={ignored || savingAssignment || !currentDetail?.modules.length}
+                                disabled={
+                                  viewer || ignored || savingAssignment || !currentDetail?.modules.length
+                                }
                                 onChange={(event) =>
                                   void saveQuoteAssignment(
                                     row.line_index,
@@ -598,7 +627,7 @@ export function PricingSettings() {
                                 type="checkbox"
                                 aria-label={`Ignore ${row.label}`}
                                 checked={ignored}
-                                disabled={savingAssignment}
+                                disabled={viewer || savingAssignment}
                                 onChange={(event) =>
                                   void saveQuoteAssignment(
                                     row.line_index,
@@ -617,6 +646,7 @@ export function PricingSettings() {
                 </div>
                 <button
                   className="button secondary"
+                  disabled={!canSave}
                   onClick={() => setPricing({ ...pricing, markup_percent: quote.suggested_markup_percent })}
                 >
                   Apply suggested markup

@@ -1604,12 +1604,29 @@
           "auth_enabled": {
             "type": "boolean",
             "title": "Auth Enabled"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "viewer",
+                  "editor",
+                  "admin"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
           }
         },
         "type": "object",
         "required": [
           "username",
-          "auth_enabled"
+          "auth_enabled",
+          "role"
         ],
         "title": "AuthMeResponse"
       },

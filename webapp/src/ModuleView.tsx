@@ -18,6 +18,7 @@ interface Props {
   model: ModuleModel
   files: { index: number; name: string }[]
   onUpdate: (model: ModuleModel) => void
+  canEdit: boolean
 }
 type Tab = 'drawing' | 'missing' | 'hardware' | 'processes' | 'history'
 const reasonLabels = {
@@ -46,7 +47,7 @@ const processLabels: Record<ProcessKind, string> = {
   hardware_mounting: 'Montaż okuć',
   installation: 'Montaż',
 }
-export default function ModuleView({ id, model, files, onUpdate }: Props) {
+export default function ModuleView({ id, model, files, onUpdate, canEdit }: Props) {
   const location = useLocation()
   const [editing, setEditing] = useState(false)
   const [tab, setTab] = useState<Tab>(location.search.includes('tab=review') ? 'missing' : 'drawing')
@@ -299,6 +300,7 @@ export default function ModuleView({ id, model, files, onUpdate }: Props) {
         exportGltf={exportGltf}
         exportPath={exportPath}
         onEdit={() => setEditing(true)}
+        canEdit={canEdit}
       />
       {tab === 'drawing' && (
         <>
@@ -320,7 +322,7 @@ export default function ModuleView({ id, model, files, onUpdate }: Props) {
               onScene={setScene}
             />
           </div>
-          {(selectedCell || selectedModule) && (
+          {(selectedCell || selectedModule) && canEdit && (
             <ModuleElementEditor
               module={module}
               selectedCell={selectedCell}
@@ -357,15 +359,17 @@ export default function ModuleView({ id, model, files, onUpdate }: Props) {
               <h2>Review</h2>
               <p>Resolve missing information and check uncertain values.</p>
             </div>
-            <button
-              className="button secondary"
-              onClick={() => void refine()}
-              disabled={model.refine_status === 'running' || refining}
-            >
-              <span>
-                {model.refine_status === 'running' || refining ? 'Refining…' : 'Ask the model again'}
-              </span>
-            </button>
+            {canEdit && (
+              <button
+                className="button secondary"
+                onClick={() => void refine()}
+                disabled={model.refine_status === 'running' || refining}
+              >
+                <span>
+                  {model.refine_status === 'running' || refining ? 'Refining…' : 'Ask the model again'}
+                </span>
+              </button>
+            )}
           </header>
           {(model.refine_status === 'running' || refining) && (
             <p className="notice">
@@ -376,7 +380,7 @@ export default function ModuleView({ id, model, files, onUpdate }: Props) {
             <p className="error-message">Refinement failed: {model.refine_error || 'Unknown error'}</p>
           )}
           {answerError && <p className="error-message">{answerError}</p>}
-          {module.questions.some((question) => question.reason === 'unverified') && (
+          {canEdit && module.questions.some((question) => question.reason === 'unverified') && (
             <button
               className="button primary"
               onClick={() => {
@@ -458,8 +462,9 @@ export default function ModuleView({ id, model, files, onUpdate }: Props) {
                                 <label>
                                   Value (mm)
                                   <input
-                                    type="number"
                                     value={answer.value_mm ?? question.current_mm ?? ''}
+                                    type="number"
+                                    disabled={!canEdit}
                                     onChange={(event) =>
                                       update({
                                         value_mm:
@@ -478,8 +483,9 @@ export default function ModuleView({ id, model, files, onUpdate }: Props) {
                                     const mark = module.marks.find((item) => item.id === markId)
                                     return (
                                       <button
-                                        key={markId}
                                         className={`chip ${answer.mark_id === markId ? 'selected' : ''}`}
+                                        key={markId}
+                                        disabled={!canEdit}
                                         onClick={() => update({ mark_id: markId, value_mm: null })}
                                       >
                                         {markId} · {mark ? `${mark.value} ${mark.unit}` : 'mark'}
@@ -490,6 +496,7 @@ export default function ModuleView({ id, model, files, onUpdate }: Props) {
                               )}
                               <button
                                 className={`button secondary ${pickedQuestion === question.id ? 'selected' : ''}`}
+                                disabled={!canEdit}
                                 onClick={() =>
                                   setPickedQuestion(pickedQuestion === question.id ? null : question.id)
                                 }
@@ -510,12 +517,14 @@ export default function ModuleView({ id, model, files, onUpdate }: Props) {
                               }
                               candidateValues={question.candidate_values}
                               onChange={update}
+                              disabled={!canEdit}
                             />
                           ) : question.kind === 'front' ? (
                             <label className="review-control">
                               Front
                               <select
                                 value={answer.front ?? question.current_value ?? ''}
+                                disabled={!canEdit}
                                 onChange={(event) =>
                                   update({ front: event.target.value as Override['front'] })
                                 }
@@ -532,6 +541,7 @@ export default function ModuleView({ id, model, files, onUpdate }: Props) {
                               Shelves
                               <input
                                 type="number"
+                                disabled={!canEdit}
                                 min="0"
                                 value={answer.shelves ?? Number(question.current_value ?? 0)}
                                 onChange={(event) => update({ shelves: Number(event.target.value) })}
@@ -540,8 +550,8 @@ export default function ModuleView({ id, model, files, onUpdate }: Props) {
                           )}
                           <button
                             className="button secondary confirm-button"
+                            disabled={!canEdit || !canConfirm}
                             title="The current value is correct"
-                            disabled={!canConfirm}
                             onClick={() =>
                               void submitAnswers([
                                 {
@@ -621,12 +631,14 @@ export default function ModuleView({ id, model, files, onUpdate }: Props) {
                               '—')}
                         </td>
                         <td>
-                          <button
-                            className="button secondary"
-                            onClick={() => void submitAnswers([{ target: override.target }])}
-                          >
-                            Remove
-                          </button>
+                          {canEdit && (
+                            <button
+                              className="button secondary"
+                              onClick={() => void submitAnswers([{ target: override.target }])}
+                            >
+                              Remove
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -636,13 +648,15 @@ export default function ModuleView({ id, model, files, onUpdate }: Props) {
             </section>
           )}
           <div className="modal-actions">
-            <button
-              className="button primary"
-              disabled={!Object.keys(answers).length}
-              onClick={() => void submitAnswers(Object.values(answers))}
-            >
-              Apply answers
-            </button>
+            {canEdit && (
+              <button
+                className="button primary"
+                disabled={!Object.keys(answers).length}
+                onClick={() => void submitAnswers(Object.values(answers))}
+              >
+                Apply answers
+              </button>
+            )}
           </div>
         </section>
       )}
@@ -767,9 +781,10 @@ export default function ModuleView({ id, model, files, onUpdate }: Props) {
           projectId={id}
           moduleId={module.module_id}
           onRestore={(restored) => onUpdate(restored)}
+          canRestore={canEdit}
         />
       )}
-      {editing && (
+      {editing && canEdit && (
         <ModuleEditor
           module={module}
           saveModule={saveModule}

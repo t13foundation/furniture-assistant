@@ -1,8 +1,10 @@
 import { useRef, useState, type DragEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
+import { isViewer, useAuth } from './auth'
 import { api } from './api'
 
 export default function NewProject() {
+  const { auth } = useAuth()
   const [files, setFiles] = useState<File[]>([])
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
@@ -44,6 +46,7 @@ export default function NewProject() {
       setBusy(false)
     }
   }
+  if (isViewer(auth)) return <Navigate to="/" replace />
   return (
     <main className="upload-page">
       <header className="topbar">

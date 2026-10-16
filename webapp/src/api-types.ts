@@ -540,6 +540,8 @@ export interface components {
             username: string | null;
             /** Auth Enabled */
             auth_enabled: boolean;
+            /** Role */
+            role: ("viewer" | "editor" | "admin") | null;
         };
         /** BoardPrice */
         BoardPrice: {

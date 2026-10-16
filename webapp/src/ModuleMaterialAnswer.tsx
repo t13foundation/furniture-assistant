@@ -7,11 +7,13 @@ export default function MaterialAnswer({
   value,
   candidateValues,
   onChange,
+  disabled,
 }: {
   module: FurnitureModule
   value: Override
   candidateValues: string[]
   onChange: (patch: Partial<Override>) => void
+  disabled: boolean
 }) {
   const [name, setName] = useState('')
   const [kind, setKind] = useState<MaterialKind>('laminated_board')
@@ -20,6 +22,7 @@ export default function MaterialAnswer({
       <label>
         Existing material
         <select
+          disabled={disabled}
           value={value.material_key ?? ''}
           onChange={(event) => onChange({ material_key: event.target.value || null, material: null })}
         >
@@ -47,6 +50,7 @@ export default function MaterialAnswer({
                 type="button"
                 className={`chip ${value.material_key === key ? 'selected' : ''}`}
                 key={key}
+                disabled={disabled}
                 onClick={() => onChange({ material_key: key, material: null })}
               >
                 {material?.name ?? key}
@@ -58,11 +62,15 @@ export default function MaterialAnswer({
       <div className="answer-row">
         <label>
           Or new material
-          <input value={name} onChange={(event) => setName(event.target.value)} />
+          <input disabled={disabled} value={name} onChange={(event) => setName(event.target.value)} />
         </label>
         <label>
           Kind
-          <select value={kind} onChange={(event) => setKind(event.target.value as MaterialKind)}>
+          <select
+            disabled={disabled}
+            value={kind}
+            onChange={(event) => setKind(event.target.value as MaterialKind)}
+          >
             {materialKinds.map((item) => (
               <option key={item} value={item}>
                 {item.replaceAll('_', ' ')}
@@ -74,6 +82,7 @@ export default function MaterialAnswer({
       {name && (
         <button
           className="button secondary"
+          disabled={disabled}
           onClick={() =>
             onChange({
               material_key: null,

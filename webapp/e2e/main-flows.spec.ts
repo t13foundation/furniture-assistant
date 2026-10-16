@@ -1,4 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
+import { randomBytes, scryptSync } from 'node:crypto'
+import { rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 // One project is created by the upload test and reused by the following tests (serial, one worker).
@@ -140,6 +142,61 @@ test('narrow screens hide the sidebar behind a menu button', async ({ page }) =>
   await expect(page.getByRole('link', { name: /Szafa testowa/ }).first()).toBeHidden()
   await menu.click()
   await expect(page.getByRole('link', { name: /Szafa testowa/ }).first()).toBeVisible()
+})
+
+test('viewer can read projects but cannot mutate or access editing controls', async ({ page }) => {
+  const usersFile = process.env.FA_E2E_USERS_FILE
+  if (!usersFile) throw new Error('FA_E2E_USERS_FILE must be set by playwright.config.ts')
+  const salt = randomBytes(16)
+  const hash = scryptSync('viewer-secret', salt, 64, { N: 2 ** 14, r: 8, p: 1 })
+  writeFileSync(
+    usersFile,
+    `users:\n  viewer:\n    salt: ${salt.toString('base64')}\n    password_hash: ${hash.toString('base64')}\n    role: viewer\n`,
+  )
+  try {
+    expect(await (await page.request.get('/api/auth/me')).json()).toMatchObject({ auth_enabled: true })
+    await page.goto('/')
+    await page.getByLabel('Username').fill('viewer')
+    await page.getByLabel('Password').fill('viewer-secret')
+    await page.getByRole('button', { name: 'Sign in' }).click()
+    await expect(page.locator('.signed-in-user')).toHaveText('viewer')
+
+    expect(await page.evaluate(async () => (await fetch('/api/projects')).status)).toBe(200)
+    const projectId = decodeURIComponent(new URL(projectUrl).hash.split('/')[2])
+    expect(
+      await page.evaluate(
+        async (id) => (await fetch(`/api/projects/${id}/analyze`, { method: 'POST' })).status,
+        projectId,
+      ),
+    ).toBe(403)
+    await page.goto(projectUrl)
+    await expect(page.getByRole('link', { name: '+ New project' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Rename project' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Delete project' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Run analysis' })).toHaveCount(0)
+    await page
+      .getByRole('link', { name: /Szafa testowa/ })
+      .first()
+      .click()
+    await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0)
+    await reviewTab(page).click()
+    await expect(page.getByRole('heading', { name: 'Review', exact: true })).toBeVisible()
+    await expect(page.locator('.module-workspace section[inert]')).toHaveCount(0)
+    await page.goto(`/#/p/${encodeURIComponent(projectId)}/pricing`)
+    await expect(page.getByRole('heading', { name: 'Pricing', exact: true })).toBeVisible()
+    await expect(page.getByText('Markup percent')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Compare with client quote' })).toBeVisible()
+    await expect(page.getByText('Quote workbook (.xlsx)')).toBeVisible()
+    await expect(page.getByLabel('Markup percent')).toBeDisabled()
+    await expect(page.getByLabel('Quote workbook (.xlsx)')).toBeDisabled()
+    for (const control of await page
+      .locator('select[aria-label^="Modules for "], input[aria-label^="Ignore "]')
+      .all()) {
+      await expect(control).toBeDisabled()
+    }
+  } finally {
+    rmSync(usersFile, { force: true })
+  }
 })
 test('A to B to A does not expose stale module data after a failed reload', async ({ page }) => {
   await ensureProjectUrl(page)
