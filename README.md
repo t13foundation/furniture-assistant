@@ -5,7 +5,7 @@ lists and a valuation for CNC manufacturing. Input is the package a furniture ma
 build-in PDFs (vector, with a text layer), plans, renders and scans (PNG/JPG), CAD (`.dwg`; `.p3d` needs an
 export) and client quote spreadsheets (`.xlsx`).
 
-**Demo:** [docs/app-demo.mp4](docs/app-demo.mp4) — a 52-second walkthrough of the two sample sheets in
+**Demo:** [docs/app-demo.mp4](docs/app-demo.mp4) - a 52-second walkthrough of the two sample sheets in
 [`samples/`](samples/) (1280×720, H.264).
 
 ## Quick start
@@ -67,9 +67,9 @@ make evaluate                     # compare results/ with ground truth
 
 ## Data
 
-- `samples/` — two committed sample sheets used by tests and the demo.
-- `sample-data/<PROJECT>/` — further project packages; git-ignored, never committed.
-- `results/` — pipeline output and web app projects (`results/webapp/projects/`); git-ignored.
+- `samples/` - two committed sample sheets used by tests and the demo.
+- `sample-data/<PROJECT>/` - further project packages; git-ignored, never committed.
+- `results/` - pipeline output and web app projects (`results/webapp/projects/`); git-ignored.
 - Configuration: `config/default.yaml` → `FA_*` environment variables → CLI arguments;
   construction rules in `config/furniture.yaml`, prices in `config/pricing.yaml`.
 
